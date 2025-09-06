@@ -54,3 +54,18 @@ h1 { margin: 8px 0 16px; }
 
 .modal-close { position: absolute; right: 10px; top: 10px; border: none; background: transparent; font-size: 20px; cursor: pointer; }
 .btn.edit { padding: 4px 8px; font-size: 12px; }
+
+/* モーダルの強制非表示（保険） */
+.modal[hidden] { display: none !important; }
+
+/* ×ボタンの表示と位置 */
+.modal-close {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+}

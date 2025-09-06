@@ -35,8 +35,10 @@
   </div>
 </div>
 
+<!-- 新規追加モーダル（必ず hidden を付けておく） -->
 <div id="create-modal" class="modal" hidden>
-  <div class="modal-content"><button type="button" class="modal-close" id="btn-close">×</button>
+  <div class="modal-content" role="dialog" aria-modal="true">
+    <button type="button" class="modal-close" id="btn-close" aria-label="閉じる">×</button>
     <h2>店舗を新規追加</h2>
     <form id="create-form">
       <label>店舗名<input name="name" required></label>
@@ -53,13 +55,17 @@
   </div>
 </div>
 
+
 <ul class="store-list" id="store-list">
   {% for s in stores %}
   <li class="store-item {% if not s.is_active %}suspended{% endif %}" data-name="{{ s.name }} {{ s.address }} {{ s.phone }} {{ s.contact }} {{ s.login_id }} {{ s.password }}">
     <label class="store-row">
       <input type="checkbox" class="row-select" value="{{ s.id }}" />
       <span class="store-main">
-        <span class="store-name">{{ s.name }}</span> <button class="btn edit" data-id="{{ s.id }}">編集</button> <span class="store-state">{% if s.is_active %}稼働中{% else %}停止中{% endif %}</span>
+        <span class="store-name">{{ s.name }}</span>
+        <button class="btn edit" data-id="{{ s.id }}">編集</button>
+        <a class="btn to-store" href="{{ url_for('admin.store_login') }}?login_id={{ s.login_id }}" target="_blank" rel="noopener">店舗ページへ</a>
+        <span class="store-state">{% if s.is_active %}稼働中{% else %}停止中{% endif %}</span>
         <span class="store-meta">
           <span>{{ s.address }}</span>／
           <span>{{ s.phone }}</span>／
@@ -79,46 +85,26 @@
   const list = document.getElementById('store-list');
   const search = document.getElementById('store-search');
   const delBtn = document.getElementById('btn-delete');
-  const checkboxes = () => Array.from(list.querySelectorAll('.row-select'));
-  const updateDeleteVisibility = () => {
-    delBtn.style.display = checkboxes().some(cb => cb.checked) ? '' : 'none';
-  };
-  list.addEventListener('change', (e) => {
-    if(e.target.classList.contains('row-select')) updateDeleteVisibility();
-const createBtn = document.getElementById('btn-create');
-const suspendBtn = document.getElementById('btn-suspend');
-const selectedIds = () => checkboxes().filter(cb=>cb.checked).map(cb=>parseInt(cb.value));
-const refreshDeleteSuspend = () => {
-  const any = selectedIds().length > 0;
-  delBtn.style.display = any ? '' : 'none';
-  suspendBtn.style.display = any ? '' : 'none';
-};
-createBtn.addEventListener('click', async () => {
-  const name = prompt('店舗名を入力してください'); if(!name) return;
-  const address = prompt('住所を入力してください'); if(!address) return;
-  const phone = prompt('電話番号を入力してください'); if(!phone) return;
-  const contact = prompt('窓口者の名称を入力してください'); if(!contact) return;
-  const login_id = prompt('店舗ログインIDを入力してください'); if(!login_id) return;
-  const password = prompt('店舗ログインパスワードを入力してください'); if(!password) return;
-  const res = await fetch('{{ url_for("admin.stores_create") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name,address,phone,contact,login_id,password})});
-  if(res.ok){ location.reload(); } else { alert('作成に失敗しました'); }
-});
-delBtn.addEventListener('click', async () => {
-  if(!confirm('選択した店舗を完全に削除します。よろしいですか？')) return;
-  const ids = selectedIds();
-  const res = await fetch('{{ url_for("admin.stores_delete") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids})});
-  if(res.ok){ location.reload(); } else { alert('削除に失敗しました'); }
-});
-suspendBtn.addEventListener('click', async () => {
-  const ids = selectedIds();
-  const suspend = confirm('一時停止しますか？（OK=停止 / キャンセル=復帰）');
-  const res = await fetch('{{ url_for("admin.stores_suspend") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids, suspend})});
-  if(res.ok){ location.reload(); } else { alert('更新に失敗しました'); }
-});
-// init
-refreshDeleteSuspend();
+  const suspendBtn = document.getElementById('btn-suspend');
+  const createBtn = document.getElementById('btn-create');
+  const selectAll = document.getElementById('select-all');
+  const selCount = document.getElementById('sel-count');
 
-  });
+  const checkboxes = () => Array.from(list.querySelectorAll('.row-select'));
+  const selectedIds = () => checkboxes().filter(cb => cb.checked).map(cb => parseInt(cb.value));
+  const anySelected = () => selectedIds().length > 0;
+
+  const updateDeleteSuspend = () => {
+    const any = anySelected();
+    delBtn.style.display = any ? '' : 'none';
+    suspendBtn.style.display = any ? '' : 'none';
+  };
+  const updateCount = () => {
+    const n = selectedIds().length;
+    selCount.textContent = n ? `選択: ${n}件` : '';
+  };
+
+  // ---- 検索 ----
   search.addEventListener('input', () => {
     const q = search.value.trim().toLowerCase();
     list.querySelectorAll('.store-item').forEach(li => {
@@ -126,41 +112,143 @@ refreshDeleteSuspend();
       li.style.display = text.includes(q) ? '' : 'none';
     });
   });
-  // init state
-  updateDeleteVisibility();
-const createBtn = document.getElementById('btn-create');
-const suspendBtn = document.getElementById('btn-suspend');
-const selectedIds = () => checkboxes().filter(cb=>cb.checked).map(cb=>parseInt(cb.value));
-const refreshDeleteSuspend = () => {
-  const any = selectedIds().length > 0;
-  delBtn.style.display = any ? '' : 'none';
-  suspendBtn.style.display = any ? '' : 'none';
-};
-createBtn.addEventListener('click', async () => {
-  const name = prompt('店舗名を入力してください'); if(!name) return;
-  const address = prompt('住所を入力してください'); if(!address) return;
-  const phone = prompt('電話番号を入力してください'); if(!phone) return;
-  const contact = prompt('窓口者の名称を入力してください'); if(!contact) return;
-  const login_id = prompt('店舗ログインIDを入力してください'); if(!login_id) return;
-  const password = prompt('店舗ログインパスワードを入力してください'); if(!password) return;
-  const res = await fetch('{{ url_for("admin.stores_create") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name,address,phone,contact,login_id,password})});
-  if(res.ok){ location.reload(); } else { alert('作成に失敗しました'); }
-});
-delBtn.addEventListener('click', async () => {
-  if(!confirm('選択した店舗を完全に削除します。よろしいですか？')) return;
-  const ids = selectedIds();
-  const res = await fetch('{{ url_for("admin.stores_delete") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids})});
-  if(res.ok){ location.reload(); } else { alert('削除に失敗しました'); }
-});
-suspendBtn.addEventListener('click', async () => {
-  const ids = selectedIds();
-  const suspend = confirm('一時停止しますか？（OK=停止 / キャンセル=復帰）');
-  const res = await fetch('{{ url_for("admin.stores_suspend") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids, suspend})});
-  if(res.ok){ location.reload(); } else { alert('更新に失敗しました'); }
-});
-// init
-refreshDeleteSuspend();
 
+  // ---- チェック選択 ----
+  list.addEventListener('change', (e) => {
+    if(e.target.classList.contains('row-select')) { updateDeleteSuspend(); updateCount(); }
+  });
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      checkboxes().forEach(cb => { cb.checked = selectAll.checked; });
+      updateDeleteSuspend(); updateCount();
+    });
+  }
+
+  // ---- モーダル制御（ここが重要）----
+  const modal = document.getElementById('create-modal');      // ← hidden が付いていること！
+  const form  = document.getElementById('create-form');
+  const btnX  = document.getElementById('btn-close');
+  const btnCancel = document.getElementById('btn-cancel');
+  const modalContent = modal?.querySelector('.modal-content');
+
+  const openModal = () => { modal.hidden = false; };
+  const closeModal = () => { modal.hidden = true; form?.reset(); };
+
+  // ボタンで開く
+  createBtn.addEventListener('click', openModal);
+
+  // × と キャンセル で閉じる
+  btnX.addEventListener('click', closeModal);
+  btnCancel.addEventListener('click', closeModal);
+
+  // 背景クリック で閉じる（中身クリックはバブリング止める）
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  modalContent?.addEventListener('click', (e) => e.stopPropagation());
+
+  // ESCで閉じる
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) closeModal();
+  });
+
+  // ---- 新規作成（成功時に自動クローズ & 先頭に差し込み）----
+  // ---- 削除（選択行を完全削除）----
+  delBtn.addEventListener('click', async () => {
+    const ids = selectedIds();
+    if (!ids.length) return;
+    if (!confirm('選択した店舗を完全に削除します。よろしいですか？')) return;
+
+    const res = await fetch('{{ url_for("admin.stores_delete") }}', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ids })
+    });
+
+    if (res.ok) {
+      // DOMから削除
+      ids.forEach(id => {
+        const row = list.querySelector(`.row-select[value="${id}"]`)?.closest('.store-item');
+        if (row) row.remove();
+      });
+      updateDeleteSuspend(); updateCount();
+    } else {
+      alert('削除に失敗しました');
+    }
+  });
+
+  // ---- 一時停止（OK=停止 / キャンセル=稼働に戻す）----
+  suspendBtn.addEventListener('click', async () => {
+    const ids = selectedIds();
+    if (!ids.length) return;
+
+    const doSuspend = confirm('一時停止しますか？（OK=停止 / キャンセル=稼働に戻す）');
+
+    const res = await fetch('{{ url_for("admin.stores_suspend") }}', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ids, suspend: doSuspend })
+    });
+
+    if (res.ok) {
+      // 見た目を更新
+      ids.forEach(id => {
+        const item = list.querySelector(`.row-select[value="${id}"]`)?.closest('.store-item');
+        if (item) {
+          item.classList.toggle('suspended', doSuspend);
+          const state = item.querySelector('.store-state');
+          if (state) state.textContent = doSuspend ? '停止中' : '稼働中';
+        }
+      });
+      updateDeleteSuspend(); updateCount();
+    } else {
+      alert('更新に失敗しました');
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
+    const res = await fetch('{{ url_for("admin.stores_create") }}', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      const id = data.id;
+      const li = document.createElement('li');
+      li.className = 'store-item';
+      li.setAttribute('data-name', `${payload.name} ${payload.address} ${payload.phone} ${payload.contact} ${payload.login_id} ${payload.password}`);
+      li.innerHTML = `
+        <label class="store-row">
+          <input type="checkbox" class="row-select" value="${id}" />
+          <span class="store-main">
+            <span class="store-name">${payload.name}</span> <button class="btn edit" data-id="${id}">編集</button>
+            <span class="store-meta">
+              <span>${payload.address}</span>／
+              <span>${payload.phone}</span>／
+              <span>窓口：${payload.contact}</span>／
+              <span>ホスト数：0</span>／
+              <span>ログインID：${payload.login_id}</span>／
+              <span>PS：${payload.password}</span>
+            </span>
+          </span>
+        </label>`;
+      list.prepend(li);
+      li.querySelector('.row-select').addEventListener('change', () => { updateDeleteSuspend(); updateCount(); });
+      li.querySelector('.edit').addEventListener('click', (ev) => openEdit(ev.target.dataset.id, li));
+      updateDeleteSuspend(); updateCount();
+      closeModal(); // ← ここで必ず閉じる
+    } else {
+      alert('作成に失敗しました');
+    }
+  });
+
+  // ---- 既存の削除・一時停止・編集の処理（省略せずそのまま残す）----
+  // ※ 既にあるコードが動いているならそのままでOK
+
+  // 初期状態
+  updateDeleteSuspend(); updateCount();
 })();
 </script>
+
 {% endblock %}
