@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ダッシュボード</h1>
+<section class="grid">
+  <div class="card">
+    <div class="card-title">稼働店舗</div>
+    <div class="card-value">{{ metrics.stores_active }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">ホスト数</div>
+    <div class="card-value">{{ metrics.hosts_total }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">本日売上</div>
+    <div class="card-value">¥{{ "{:,}".format(metrics.today_sales) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">今月売上</div>
+    <div class="card-value">¥{{ "{:,}".format(metrics.month_sales) }}</div>
+  </div>
+</section>
+
+<section>
+  <h2>次にやること</h2>
+  <ol>
+    <li>「店舗一覧」のCRUDを作る</li>
+    <li>LINE Bot からの売上登録APIを作る</li>
+    <li>在庫画面・バック率設定を設計</li>
+  </ol>
+</section>
+{% endblock %}

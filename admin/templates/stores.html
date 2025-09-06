@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>店舗一覧</h1><p class='hint'>チェック済みのみ削除／一時停止できます。</p>
+
+<div class="sticky-actions">
+  <div class="actions-left"><label class="checkall"><input type="checkbox" id="select-all" /> 全選択</label><span id="sel-count" class="hint"></span>
+    <button class="btn primary" id="btn-create">新規追加</button>
+    <button class="btn" id="btn-import">CSVインポート</button>
+    <input type="file" id="csv-file" accept=".csv" hidden />
+    <button class="btn danger" id="btn-delete" style="display:none;">削除</button>
+    <button class="btn" id="btn-suspend" style="display:none;">一時停止</button>
+  </div>
+  <div class="actions-right">
+    <input type="search" id="store-search" placeholder="店舗を検索…" />
+  </div>
+</div>
+
+<div id="edit-modal" class="modal" hidden>
+  <div class="modal-content">
+    <button type="button" class="modal-close" id="btn-edit-close">×</button>
+    <h2>店舗を編集</h2>
+    <form id="edit-form">
+      <input type="hidden" name="id">
+      <label>店舗名<input name="name" required></label>
+      <label>住所<input name="address" required></label>
+      <label>電話番号<input name="phone" required></label>
+      <label>窓口者名称<input name="contact" required></label>
+      <label>ログインID<input name="login_id" required></label>
+      <label>パスワード<input name="password" type="password" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="btn-edit-cancel">キャンセル</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="create-modal" class="modal" hidden>
+  <div class="modal-content"><button type="button" class="modal-close" id="btn-close">×</button>
+    <h2>店舗を新規追加</h2>
+    <form id="create-form">
+      <label>店舗名<input name="name" required></label>
+      <label>住所<input name="address" required></label>
+      <label>電話番号<input name="phone" required></label>
+      <label>窓口者名称<input name="contact" required></label>
+      <label>ログインID<input name="login_id" required></label>
+      <label>パスワード<input name="password" type="password" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="btn-cancel">キャンセル</button>
+        <button type="submit" class="btn primary">登録</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<ul class="store-list" id="store-list">
+  {% for s in stores %}
+  <li class="store-item {% if not s.is_active %}suspended{% endif %}" data-name="{{ s.name }} {{ s.address }} {{ s.phone }} {{ s.contact }} {{ s.login_id }} {{ s.password }}">
+    <label class="store-row">
+      <input type="checkbox" class="row-select" value="{{ s.id }}" />
+      <span class="store-main">
+        <span class="store-name">{{ s.name }}</span> <button class="btn edit" data-id="{{ s.id }}">編集</button> <span class="store-state">{% if s.is_active %}稼働中{% else %}停止中{% endif %}</span>
+        <span class="store-meta">
+          <span>{{ s.address }}</span>／
+          <span>{{ s.phone }}</span>／
+          <span>窓口：{{ s.contact }}</span>／
+          <span>ホスト数：{{ host_counts.get(s.id, 0) }}</span>／
+          <span>ログインID：{{ s.login_id }}</span>／
+          <span>PS：{{ s.password }}</span>
+        </span>
+      </span>
+    </label>
+  </li>
+  {% endfor %}
+</ul>
+
+<script>
+(function(){
+  const list = document.getElementById('store-list');
+  const search = document.getElementById('store-search');
+  const delBtn = document.getElementById('btn-delete');
+  const checkboxes = () => Array.from(list.querySelectorAll('.row-select'));
+  const updateDeleteVisibility = () => {
+    delBtn.style.display = checkboxes().some(cb => cb.checked) ? '' : 'none';
+  };
+  list.addEventListener('change', (e) => {
+    if(e.target.classList.contains('row-select')) updateDeleteVisibility();
+const createBtn = document.getElementById('btn-create');
+const suspendBtn = document.getElementById('btn-suspend');
+const selectedIds = () => checkboxes().filter(cb=>cb.checked).map(cb=>parseInt(cb.value));
+const refreshDeleteSuspend = () => {
+  const any = selectedIds().length > 0;
+  delBtn.style.display = any ? '' : 'none';
+  suspendBtn.style.display = any ? '' : 'none';
+};
+createBtn.addEventListener('click', async () => {
+  const name = prompt('店舗名を入力してください'); if(!name) return;
+  const address = prompt('住所を入力してください'); if(!address) return;
+  const phone = prompt('電話番号を入力してください'); if(!phone) return;
+  const contact = prompt('窓口者の名称を入力してください'); if(!contact) return;
+  const login_id = prompt('店舗ログインIDを入力してください'); if(!login_id) return;
+  const password = prompt('店舗ログインパスワードを入力してください'); if(!password) return;
+  const res = await fetch('{{ url_for("admin.stores_create") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name,address,phone,contact,login_id,password})});
+  if(res.ok){ location.reload(); } else { alert('作成に失敗しました'); }
+});
+delBtn.addEventListener('click', async () => {
+  if(!confirm('選択した店舗を完全に削除します。よろしいですか？')) return;
+  const ids = selectedIds();
+  const res = await fetch('{{ url_for("admin.stores_delete") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids})});
+  if(res.ok){ location.reload(); } else { alert('削除に失敗しました'); }
+});
+suspendBtn.addEventListener('click', async () => {
+  const ids = selectedIds();
+  const suspend = confirm('一時停止しますか？（OK=停止 / キャンセル=復帰）');
+  const res = await fetch('{{ url_for("admin.stores_suspend") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids, suspend})});
+  if(res.ok){ location.reload(); } else { alert('更新に失敗しました'); }
+});
+// init
+refreshDeleteSuspend();
+
+  });
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    list.querySelectorAll('.store-item').forEach(li => {
+      const text = li.getAttribute('data-name').toLowerCase();
+      li.style.display = text.includes(q) ? '' : 'none';
+    });
+  });
+  // init state
+  updateDeleteVisibility();
+const createBtn = document.getElementById('btn-create');
+const suspendBtn = document.getElementById('btn-suspend');
+const selectedIds = () => checkboxes().filter(cb=>cb.checked).map(cb=>parseInt(cb.value));
+const refreshDeleteSuspend = () => {
+  const any = selectedIds().length > 0;
+  delBtn.style.display = any ? '' : 'none';
+  suspendBtn.style.display = any ? '' : 'none';
+};
+createBtn.addEventListener('click', async () => {
+  const name = prompt('店舗名を入力してください'); if(!name) return;
+  const address = prompt('住所を入力してください'); if(!address) return;
+  const phone = prompt('電話番号を入力してください'); if(!phone) return;
+  const contact = prompt('窓口者の名称を入力してください'); if(!contact) return;
+  const login_id = prompt('店舗ログインIDを入力してください'); if(!login_id) return;
+  const password = prompt('店舗ログインパスワードを入力してください'); if(!password) return;
+  const res = await fetch('{{ url_for("admin.stores_create") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name,address,phone,contact,login_id,password})});
+  if(res.ok){ location.reload(); } else { alert('作成に失敗しました'); }
+});
+delBtn.addEventListener('click', async () => {
+  if(!confirm('選択した店舗を完全に削除します。よろしいですか？')) return;
+  const ids = selectedIds();
+  const res = await fetch('{{ url_for("admin.stores_delete") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids})});
+  if(res.ok){ location.reload(); } else { alert('削除に失敗しました'); }
+});
+suspendBtn.addEventListener('click', async () => {
+  const ids = selectedIds();
+  const suspend = confirm('一時停止しますか？（OK=停止 / キャンセル=復帰）');
+  const res = await fetch('{{ url_for("admin.stores_suspend") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids, suspend})});
+  if(res.ok){ location.reload(); } else { alert('更新に失敗しました'); }
+});
+// init
+refreshDeleteSuspend();
+
+})();
+</script>
+{% endblock %}

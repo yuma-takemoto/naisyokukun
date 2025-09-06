@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>内職君（店舗）</title>
+  <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">内職君（店舗）</div>
+    <nav class="nav">
+      <a href="{{ url_for('admin.store_dashboard', store_id=store.id) }}">ダッシュボード</a>
+      <a href="{{ url_for('admin.store_login') }}">ログアウト</a>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

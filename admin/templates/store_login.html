@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>店舗ログイン（デモ）</h1>
+<form method="post" action="{{ url_for('admin.store_login') }}" class="settings-form">
+  <label>ログインID<input type="text" name="login_id" required></label>
+  <label>パスワード<input type="password" name="password" required></label>
+  <button class="btn primary" type="submit">ログイン</button>
+</form>
+{% if message %}<p class="hint">{{ message }}</p>{% endif %}
+{% endblock %}

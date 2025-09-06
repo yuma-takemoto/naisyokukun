@@ -1,0 +1,10 @@
+{% extends "store_base.html" %}
+{% block content %}
+<h1>{{ store.name }}（店舗ダッシュボード）</h1>
+<p>住所：{{ store.address }}　／　電話：{{ store.phone }}　／　窓口：{{ store.contact }}</p>
+<p>稼働状態：{% if store.is_active %}稼働中{% else %}停止中{% endif %}</p>
+<p>所属ホスト数：{{ host_count }}</p>
+{% if not store.is_active %}
+  <p class="hint">※この店舗は停止中のため、機能は利用できません。</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ホスト管理</h1>
+
+<div class="sticky-actions">
+  <div class="actions-left">
+    <label>店舗
+      <select id="store-filter">
+        <option value="0">すべて</option>
+        {% for st in stores %}
+          <option value="{{ st.id }}">{{ st.name }} {% if not st.is_active %}(停止){% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" id="btn-host-add">追加</button>
+    <button class="btn danger" id="btn-host-del" style="display:none;">削除</button>
+    <a class="btn" href="{{ url_for('admin.hosts_export') }}">CSVエクスポート</a>
+  </div>
+</div>
+
+<ul class="store-list" id="host-list">
+  {% for h in hosts %}
+  <li class="store-item" data-id="{{ h.id }}" data-store="{{ h.store_id }}">
+    <label class="store-row">
+      <input type="checkbox" class="row-select" value="{{ h.id }}" />
+      <span class="store-main">
+        <span class="store-name">{{ h.name }}</span>
+        <span class="store-meta"><span>店舗ID：{{ h.store_id }}</span></span>
+      </span>
+    </label>
+  </li>
+  {% endfor %}
+</ul>
+
+<script>
+(function(){
+  const list = document.getElementById('host-list');
+  const filter = document.getElementById('store-filter');
+  const addBtn = document.getElementById('btn-host-add');
+  const delBtn = document.getElementById('btn-host-del');
+
+  const items = () => Array.from(list.querySelectorAll('.store-item'));
+  const checks = () => Array.from(list.querySelectorAll('.row-select'));
+  const selected = () => checks().filter(cb=>cb.checked).map(cb=>parseInt(cb.value));
+  const updateDel = () => { delBtn.style.display = selected().length ? '' : 'none'; };
+
+  filter.addEventListener('change', () => {
+    const sid = parseInt(filter.value);
+    items().forEach(li => {
+      const keep = sid === 0 || parseInt(li.dataset.store) === sid;
+      li.style.display = keep ? '' : 'none';
+    });
+  });
+
+  list.addEventListener('change', updateDel);
+  addBtn.addEventListener('click', async () => {
+    const sid = parseInt(prompt('追加先の店舗IDを入力してください（店舗一覧で確認）')); if(!sid) return;
+    const name = prompt('ホスト名を入力してください'); if(!name) return;
+    const res = await fetch('{{ url_for("admin.hosts_create") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({store_id: sid, name})});
+    if(res.ok){ location.reload(); } else { alert('追加に失敗しました'); }
+  });
+  delBtn.addEventListener('click', async () => {
+    if(!confirm('選択したホストを削除します。よろしいですか？')) return;
+    const ids = selected();
+    const res = await fetch('{{ url_for("admin.hosts_delete") }}', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids})});
+    if(res.ok){ location.reload(); } else { alert('削除に失敗しました'); }
+  });
+
+  updateDel();
+})();
+</script>
+{% endblock %}

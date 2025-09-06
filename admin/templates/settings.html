@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>設定</h1>
+<form method="post" class="settings-form">
+  <fieldset>
+    <legend>バック率の既定値</legend>
+    <label>バック率（0〜1.0）<input type="number" name="default_commission_rate" step="0.01" min="0" max="1" value="{{ s.default_commission_rate if s else 0 }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>在庫の下限しきい値</legend>
+    <label>下限在庫（初期値）<input type="number" name="default_reorder_point" min="0" value="{{ s.default_reorder_point if s else 0 }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>締め日</legend>
+    <label>締め日（1〜31）<input type="number" name="closing_day" min="1" max="31" value="{{ s.closing_day if s else 31 }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>LINE Bot 接続情報</legend>
+    <p class="desc">※ 「チャネルアクセストークン」「チャネルシークレット」は LINE Developers で発行します。</p>
+    <label>チャネルアクセストークン<input type="text" name="line_channel_access_token" value="{{ s.line_channel_access_token if s else '' }}"></label>
+    <label>チャネルシークレット<input type="text" name="line_channel_secret" value="{{ s.line_channel_secret if s else '' }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>発注メール送信先</legend>
+    <label>酒屋メールアドレス<input type="email" name="order_vendor_email" value="{{ s.order_vendor_email if s else '' }}"></label>
+  </fieldset>
+
+  <fieldset>
+  <legend>管理者アカウント</legend>
+  <label>ユーザー<input type="text" name="admin_user" value="{{ s.admin_user if s else 'admin' }}"></label>
+  <label>パスワード<input type="password" name="admin_password" value="{{ s.admin_password if s else 'password' }}"></label>
+</fieldset>
+<div class="form-actions">
+    <button class="btn primary" type="submit">保存</button>
+  </div>
+</form>
+{% endblock %}
