@@ -1,0 +1,131 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>営業状況</h2>
+
+<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
+  {% for s in seats %}
+  <div class="card" data-id="{{ s.id }}">
+    <h3>{{ s.label }}</h3>
+    <p>状態：
+      <span class="state-chip {{ 'is-open' if s.get('open') else 'is-empty' }}">
+        <span class="state-text">{{ '接客中' if s.get('open') else '空席' }}</span>
+      </span>
+    </p>
+    <div class="field">
+     <label>姫の名前<input class="guest" value="{{ s.guest_name or '' }}"></label>
+    </div>
+    <div class="field">
+      <label>担当ホスト
+        <select class="host">
+          <option value="0">未選択</option>
+          {% for h in hosts %}
+            <option value="{{ h.id }}" {% if s.host_id==h.id %}selected{% endif %}>{{ h.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="actions">
+      <button class="btn mark-open">{{ s.get('open') and '空席にする' or '接客中にする' }}</button>
+      <button class="btn danger checkout">会計</button>
+    </div>
+    <hr>
+    <div>
+      <label>注文追加
+        <select class="liquor">
+          {% for l in liquors %}
+            <option value="{{ l.id }}">{{ l.name }}（¥{{ '%.0f'|format(l.sale_price) }} / 在庫{{ l.stock }}）</option>
+          {% endfor %}
+        </select>
+        <input class="qty" type="number" value="1" min="1" style="width:64px;">
+        <button class="btn add">追加</button>
+      </label>
+      <ul class="items">
+        {% for it in s.get('items', []) %}
+          <li>{{ it.name }} x {{ it.qty }} = ¥{{ '%.0f'|format(it.qty*it.unit_price) }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+document.querySelectorAll('.card').forEach(card=>{
+  const id = parseInt(card.dataset.id);
+  const guest = card.querySelector('.guest');
+  const hostSel = card.querySelector('.host');
+  const stateText = card.querySelector('.state-text');
+  const stateChip = card.querySelector('.state-chip');
+  const btnOpen = card.querySelector('.mark-open');
+  const items = card.querySelector('.items');
+
+  async function saveSeat(payload){
+    payload.id = id;
+    const res = await fetch('{{ url_for("admin.store_seats_upsert") }}',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+    });
+    return res.ok;
+  }
+
+  // 状態切替
+  btnOpen.addEventListener('click', async ()=>{
+    const open = stateText.textContent === '空席'; // 空席→接客中 へ
+    if(await saveSeat({open, guest_name:guest.value, host_id:parseInt(hostSel.value||0)})){
+      const isOpen = open;
+      stateText.textContent = isOpen ? '接客中' : '空席';
+      stateChip.classList.toggle('is-open',  isOpen);
+      stateChip.classList.toggle('is-empty', !isOpen);
+      btnOpen.textContent = isOpen ? '空席にする' : '接客中にする';
+    }
+  });
+
+  // 担当/姫名の変更を保存（フォーカスアウト）
+  guest.addEventListener('change', ()=> saveSeat({guest_name:guest.value}));
+  hostSel.addEventListener('change', ()=> saveSeat({host_id:parseInt(hostSel.value||0)}));
+
+  // 注文追加
+  card.querySelector('.add').addEventListener('click', async ()=>{
+    const liquor = parseInt(card.querySelector('.liquor').value);
+    const qty = parseInt(card.querySelector('.qty').value||1);
+    const res = await fetch('{{ url_for("admin.store_ops_order") }}',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seat_id:id, liquor_id:liquor, qty})
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      // 再描画は簡易に行追加
+      const name = card.querySelector('.liquor').selectedOptions[0].text.split('（')[0];
+      const price = parseInt(card.querySelector('.liquor').selectedOptions[0].text.match(/¥(\d+)/)?.[1]||0);
+      const li = document.createElement('li');
+      li.textContent = `${name} x ${qty} = ¥${price*qty}`;
+      items.appendChild(li);
+      alert('追加しました（在庫も自動減算）');
+    }else if(data.error==='no_stock'){
+      alert('在庫が足りません');
+    }else{
+      alert('追加に失敗しました');
+    }
+  });
+
+  // 会計
+  card.querySelector('.checkout').addEventListener('click', async ()=>{
+    if(!confirm('会計を確定します。よろしいですか？')) return;
+    const res = await fetch('{{ url_for("admin.store_ops_checkout") }}',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seat_id:id})
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      alert('会計を確定しました。合計：¥'+data.total);
+      items.innerHTML = '';
+      state.textContent = '空席';
+      btnOpen.textContent = '接客中にする';
+      guest.value = '';
+      hostSel.value = '0';
+    }else{
+      alert('会計に失敗しました');
+    }
+  });
+});
+</script>
+{% endblock %}

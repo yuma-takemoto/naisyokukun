@@ -1,0 +1,306 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>各種登録</h2>
+
+<section class="card">
+  <h3>酒類 登録/編集</h3>
+
+  <form id="liquor-form" class="form-row" onsubmit="return false;">
+  <input name="name" placeholder="酒類名（必須）" required>
+  <label><input name="sale_price" type="number" step="1" min="0" required placeholder="販売価格"> 円</label>
+  <label><input name="cost_price" type="number" step="1" min="0" required placeholder="原価">  円</label>
+  <label><input name="reorder_point" type="number" step="1" min="0" placeholder="下限数"></label>
+  <label><input name="stock" type="number" step="1" min="0" placeholder="在庫"></label>
+  <button class="btn primary" id="btn-liquor-create" type="button">追加</button>
+</form>
+
+  <ul id="liquor-list">
+    {% for l in liquors %}
+      <li data-id="{{ l.id }}">{{ l.name }} — 価格: {{ l.sale_price }} 在庫: {{ l.stock }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="card">
+  <div class="sticky-actions">
+    <h3 style="margin:0;flex:1;">座席 登録/編集</h3>
+    <button class="btn primary" id="seat-add">追加</button>
+    <button class="btn danger" id="seat-del" style="display:none;">削除</button>
+  </div>
+
+  <table class="table" id="seats-table">
+    <thead><tr><th><input type="checkbox" id="seat-all"></th><th>席名</th><th>状態</th></tr></thead>
+    <tbody>
+      {% for s in seats %}
+        <tr data-id="{{ s.id }}">
+          <td><input type="checkbox" class="seat-check" value="{{ s.id }}"></td>
+          <td>{{ s.label }}</td>
+          <td>{{ s.get('open') and '接客中' or '空席' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h3>歩合設定（0.1 = 10%）</h3>
+
+  <h4>ホスト別</h4>
+  <table class="table" id="comm-host">
+    <thead><tr><th>ホスト</th><th>歩合</th></tr></thead>
+    <tbody>
+      {% set ph = (commissions.per_host if commissions and commissions.per_host else {}) %}
+      {% for h in hosts %}
+        <tr>
+          <td>{{ h.name }}</td>
+          <td>
+            <input type="text" inputmode="decimal" step="0.01"
+              value="{{ ph.get('%s' % h.id, '') }}"
+              data-host-id="{{ h.id }}" placeholder="例) 0.1 or 10%">
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h4>酒類別</h4>
+  <table class="table" id="comm-liquor">
+    <thead><tr><th>酒類</th><th>歩合</th></tr></thead>
+    <tbody>
+      {% set pl = (commissions.per_liquor if commissions and commissions.per_liquor else {}) %}
+      {% for l in liquors %}
+        <tr>
+          <td>{{ l.name }}</td>
+          <td>
+            <input type="text" inputmode="decimal" step="0.01"
+              value="{{ pl.get('%s' % l.id, '') }}"
+              data-liquor-id="{{ l.id }}" placeholder="例) 0.15 or 15%">
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div style="margin-top:8px;">
+    <button class="btn primary" id="btn-comm-save">歩合を保存</button>
+    <span class="hint">※空欄は未設定（既定値を使用）</span>
+  </div>
+</section>
+
+<script>
+document.getElementById('liquor-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  const res = await fetch('{{ url_for("admin.store_liquors_create") }}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data = await res.json().catch(()=>({}));
+  if(res.ok && data.ok){
+    const li = document.createElement('li');
+    li.dataset.id = data.id;
+    li.textContent = `${payload.name} — 価格: ${payload.sale_price||0} 在庫: ${payload.stock||0}`;
+    document.getElementById('liquor-list').prepend(li);
+    e.target.reset();
+  }else alert('登録に失敗しました');
+});
+
+document.getElementById('seat-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  payload.open = false;
+  const res = await fetch('{{ url_for("admin.store_seats_upsert") }}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data = await res.json().catch(()=>({}));
+  if(res.ok && data.ok){
+    const li = document.createElement('li');
+    li.dataset.id = data.id;
+    li.textContent = payload.label || `席${data.id}`;
+    document.getElementById('seat-list').prepend(li);
+    e.target.reset();
+  }else alert('登録に失敗しました');
+});
+</script>
+<script>
+  // …（既存のJSの下に追記）…
+  document.getElementById('btn-comm-save')?.addEventListener('click', async ()=>{
+    const per_host = {};
+    document.querySelectorAll('#comm-host [data-host-id]').forEach(inp=>{
+      const v = inp.value.trim();
+      if (v !== '') per_host[inp.dataset.hostId] = v;
+    });
+    const per_liquor = {};
+    document.querySelectorAll('#comm-liquor [data-liquor-id]').forEach(inp=>{
+      const v = inp.value.trim();
+      if (v !== '') per_liquor[inp.dataset.liquorId] = v;
+    });
+
+    const res = await fetch('{{ url_for("admin.store_commissions_save") }}', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ per_host, per_liquor })
+    });
+    if (res.ok) {
+      alert('歩合を保存しました');
+    } else {
+      alert('保存に失敗しました');
+    }
+  });
+
+  // 例：#btn-liquor-create のクリック時
+  document.getElementById('btn-liquor-create')?.addEventListener('click', async (e)=>{
+    e.preventDefault();
+    const payload = {
+      name: document.querySelector('[name="name"]').value.trim(),
+      sale_price: document.querySelector('[name="sale_price"]').value,
+      cost_price: document.querySelector('[name="cost_price"]').value,
+      reorder_point: document.querySelector('[name="reorder_point"]').value || 0,
+      stock: document.querySelector('[name="stock"]').value || 0,
+    };
+    const res = await fetch('{{ url_for("admin.store_liquors_create") }}', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      // ★ 成功したら必ずリロードしてサーバの最新を表示
+      location.reload();
+    } else {
+      alert('登録に失敗しました');
+    }
+  });
+</script>
+
+<script>
+(function(){
+  const tbl = document.getElementById('seats-table');
+  const all = document.getElementById('seat-all');
+  const del = document.getElementById('seat-del');
+
+  function selectedIds(){
+    return Array.from(tbl.querySelectorAll('.seat-check:checked')).map(cb=>parseInt(cb.value));
+  }
+  function updateDel(){
+    del.style.display = selectedIds().length ? '' : 'none';
+  }
+  tbl.addEventListener('change', (e)=>{
+    if(e.target.id==='seat-all'){
+      const on = e.target.checked;
+      tbl.querySelectorAll('.seat-check').forEach(cb=>cb.checked=on);
+    }
+    if(e.target.classList.contains('seat-check') || e.target.id==='seat-all'){
+      updateDel();
+    }
+  });
+  del.addEventListener('click', async ()=>{
+    const ids = selectedIds();
+    if(!ids.length) return;
+    if(!confirm(`${ids.length}件を削除します。よろしいですか？`)) return;
+    const res = await fetch('{{ url_for("admin.store_seats_delete") }}', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ids})
+    });
+    if(res.ok){
+      ids.forEach(id=>{
+        const tr = tbl.querySelector(`tr[data-id="${id}"]`);
+        tr?.remove();
+      });
+      updateDel();
+    }else{
+      alert('削除に失敗しました');
+    }
+  });
+})();
+</script>
+
+<script>
+(function(){
+  const tbl = document.getElementById('seats-table');
+  const seatAll = document.getElementById('seat-all');
+  const btnAdd = document.getElementById('seat-add');
+  const btnDel = document.getElementById('seat-del');
+
+  function selectedIds(){
+    return Array.from(tbl.querySelectorAll('.seat-check:checked'))
+      .map(cb => parseInt(cb.value));
+  }
+  function updateDel(){
+    btnDel.style.display = selectedIds().length ? '' : 'none';
+  }
+
+  // 全選択
+  seatAll?.addEventListener('change', ()=>{
+    const on = seatAll.checked;
+    tbl.querySelectorAll('.seat-check').forEach(cb => cb.checked = on);
+    updateDel();
+  });
+
+  // 個別チェック
+  tbl.addEventListener('change', (e)=>{
+    if(e.target.classList.contains('seat-check')) updateDel();
+  });
+
+  // 追加：簡易に prompt で席名を入力（必要ならモーダル化へ拡張可）
+  btnAdd?.addEventListener('click', async ()=>{
+    const label = (prompt('追加する席名を入力してください（例：A1）') || '').trim();
+    if(!label) return;
+    const res = await fetch('{{ url_for("admin.store_seats_upsert") }}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ label })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      // 反映：手早くリロード（サーバ反映を確実に拾う）
+      location.reload();
+    }else{
+      alert('追加に失敗しました');
+    }
+  });
+
+  // 削除（選択があるときだけ表示）
+  btnDel?.addEventListener('click', async ()=>{
+    const ids = selectedIds();
+    if(!ids.length) return;
+    if(!confirm(`${ids.length}件の席を削除します。よろしいですか？`)) return;
+    const res = await fetch('{{ url_for("admin.store_seats_delete") }}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ids })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      // 行を消す（または location.reload() でもOK）
+      ids.forEach(id=>{
+        const tr = tbl.querySelector(`tr[data-id="${id}"]`);
+        tr?.remove();
+      });
+      updateDel();
+    }else{
+      alert('削除に失敗しました');
+    }
+  });
+
+  // 初期
+  updateDel();
+})();
+</script>
+
+<script>
+(function(){
+  const form = document.getElementById('liquor-form');
+  document.getElementById('btn-liquor-create')?.addEventListener('click', async ()=>{
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
+    const res = await fetch('{{ url_for("admin.store_liquors_create") }}', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(res.ok){
+      location.reload(); // ← サーバ保存結果を確実に反映
+    }else{
+      const t = await res.text().catch(()=>'-');
+      alert('登録に失敗しました: ' + t);
+    }
+  });
+})();
+</script>
+
+{% endblock %}

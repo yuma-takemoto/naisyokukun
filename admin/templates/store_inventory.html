@@ -1,0 +1,37 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>酒類設定</h2>
+<table class="table" id="liquor-table">
+  <thead><tr><th>名称</th><th>販売価格</th><th>原価</th><th>在庫</th><th>下限数</th><th></th></tr></thead>
+  <tbody>
+    {% for l in liquors %}
+    <tr data-id="{{ l.id }}">
+      <td><input value="{{ l.name }}" class="name"></td>
+      <td><input name="sale_price" type="number" step="1" min="0" value="{{ l.sale_price|int }}"> 円</td>
+      <td><input name="cost_price" type="number" step="1" min="0" value="{{ l.cost_price|int }}"> 円</td>
+      <td><input type="number" value="{{ l.stock }}" class="stock"></td>
+      <td><input type="number" value="{{ l.reorder_point }}" class="reorder"></td>
+      <td><button class="btn save">保存</button></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<script>
+document.querySelectorAll('#liquor-table .save').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    const tr = btn.closest('tr');
+    const payload = {
+      id: parseInt(tr.dataset.id),
+      name: tr.querySelector('.name').value,
+      sale_price: parseFloat(tr.querySelector('.sale').value||0),
+      cost_price: parseFloat(tr.querySelector('.cost').value||0),
+      stock: parseInt(tr.querySelector('.stock').value||0),
+      reorder_point: parseInt(tr.querySelector('.reorder').value||0)
+    };
+    const res = await fetch('{{ url_for("admin.store_liquors_update") }}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(res.ok) alert('保存しました');
+    else alert('保存に失敗しました');
+  });
+});
+</script>
+{% endblock %}

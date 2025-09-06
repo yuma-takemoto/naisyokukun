@@ -3,9 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>内職君</title>
   <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet" />
 </head>
+<script>
+// すべての fetch に CSRF ヘッダーを自動付与
+(function(){
+  const token = document.querySelector('meta[name="csrf-token"]')?.content;
+  if(!token) return;
+  const _fetch = window.fetch;
+  window.fetch = function(input, init){
+    init = init || {};
+    init.headers = Object.assign({}, init.headers || {}, {'X-CSRF-Token': token});
+    return _fetch(input, init);
+  };
+})();
+</script>
 <body>
   <header class="topbar">
     <div class="brand">内職君</div>

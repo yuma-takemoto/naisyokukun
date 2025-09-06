@@ -26,7 +26,7 @@
       <label>電話番号<input name="phone" required></label>
       <label>窓口者名称<input name="contact" required></label>
       <label>ログインID<input name="login_id" required></label>
-      <label>パスワード<input name="password" type="password" required></label>
+      <label>パスワード（変更時のみ）<input name="password" type="password" placeholder="空欄＝変更なし"></label>
       <div class="modal-actions">
         <button type="button" class="btn" id="btn-edit-cancel">キャンセル</button>
         <button type="submit" class="btn primary">保存</button>
@@ -46,7 +46,7 @@
       <label>電話番号<input name="phone" required></label>
       <label>窓口者名称<input name="contact" required></label>
       <label>ログインID<input name="login_id" required></label>
-      <label>パスワード<input name="password" type="password" required></label>
+      <label>パスワード（変更時のみ）<input name="password" type="password" placeholder="空欄＝変更なし"></label>
       <div class="modal-actions">
         <button type="button" class="btn" id="btn-cancel">キャンセル</button>
         <button type="submit" class="btn primary">登録</button>
@@ -72,7 +72,7 @@
           <span>窓口：{{ s.contact }}</span>／
           <span>ホスト数：{{ host_counts.get(s.id, 0) }}</span>／
           <span>ログインID：{{ s.login_id }}</span>／
-          <span>PS：{{ s.password }}</span>
+          <span>PS：********（非表示）</span>
         </span>
       </span>
     </label>

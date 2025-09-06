@@ -69,3 +69,36 @@ h1 { margin: 8px 0 16px; }
   cursor: pointer;
   line-height: 1;
 }
+.tabs { display:flex; gap:10px; border-bottom:1px solid #e5e7eb; margin-bottom:12px; }
+.tabs a { padding:8px 12px; border-radius:8px 8px 0 0; text-decoration:none; }
+.tabs a.active { background:#f3f4f6; font-weight:600; }
+.card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
+.badge { color:#fff; padding:2px 8px; border-radius:999px; font-size:12px; }
+.table { width:100%; border-collapse:collapse; }
+.table th, .table td { border-bottom:1px solid #e5e7eb; padding:6px; text-align:left; }
+.table input[type="text"], .table input[type="number"] {
+  width: 120px;
+}
+.field { margin: 6px 0; }
+/* 状態チップ：枠色で状態を表現 */
+.state-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 2px solid;
+  border-radius: 999px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.state-chip.is-open {
+  border-color: #16a34a;  /* 緑 */
+  color: #16a34a;
+}
+.state-chip.is-empty {
+  border-color: #dc2626;  /* 赤 */
+  color: #dc2626;
+}
+.sticky-actions{
+  position: sticky; top: 0; background: #fff; z-index: 5;
+  padding: 8px 0; display: flex; gap: 8px; align-items: center;
+  border-bottom: 1px solid #eee; margin-bottom: 8px;
+}

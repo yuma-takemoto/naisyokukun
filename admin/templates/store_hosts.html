@@ -1,0 +1,32 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>ホスト一覧</h2>
+<div class="sticky-actions">
+  <div class="actions-left">
+    <button class="btn" id="sort-name">名前順</button>
+  </div>
+</div>
+<ul id="host-list" class="store-list">
+  {% for h in hosts %}
+  <li class="store-item" data-name="{{ h.name }}">
+    <span class="store-main">
+      <span class="store-name">{{ h.name }}</span>
+      {% if h.id in busy_ids %}
+        <span class="badge" style="background:#16a34a;">接客中</span>
+      {% else %}
+        <span class="badge" style="background:#dc2626;">非接客</span>
+      {% endif %}
+      <a class="btn" href="{{ url_for('admin.store_host_detail', host_id=h.id) }}">詳細</a>
+    </span>
+  </li>
+  {% endfor %}
+</ul>
+<script>
+document.getElementById('sort-name').addEventListener('click', ()=>{
+  const ul = document.getElementById('host-list');
+  const items = Array.from(ul.children);
+  items.sort((a,b)=>a.dataset.name.localeCompare(b.dataset.name,'ja'));
+  items.forEach(li=>ul.appendChild(li));
+});
+</script>
+{% endblock %}

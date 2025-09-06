@@ -1,0 +1,31 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>ホスト詳細：{{ host.name }}</h2>
+
+<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+  <div class="card">
+    <h3>サマリー</h3>
+    <p>今日の売上：<strong>¥{{ '%.0f'|format(total_today) }}</strong></p>
+    <p>今月の売上：<strong>¥{{ '%.0f'|format(total_month) }}</strong></p>
+    <p>今日の歩合：<strong>¥{{ '%.0f'|format(comm_today) }}</strong></p>
+    <p>今月の歩合：<strong>¥{{ '%.0f'|format(comm_month) }}</strong></p>
+    <p>個別歩合（ホスト）：{{ host_rate is not none and (host_rate*100)|round(1) ~ '%' or '未設定（既定）' }}</p>
+  </div>
+  <div class="card">
+    <h3>最近の会計</h3>
+    <table class="table">
+      <thead><tr><th>日付</th><th>席</th><th>合計</th><th>歩合</th></tr></thead>
+      <tbody>
+        {% for s in sales|reverse %}
+          <tr>
+            <td>{{ s.date }}</td>
+            <td>{{ s.seat_label }}</td>
+            <td>¥{{ '%.0f'|format(s.total) }}</td>
+            <td>¥{{ '%.0f'|format(s.get('commission_total', 0)) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

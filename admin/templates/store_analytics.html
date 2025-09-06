@@ -1,0 +1,19 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>データ解析</h2>
+<p>（MVP）日・月・ホスト・酒類での集計は今後グラフ化。まずは売上ログ表示。</p>
+<table class="table">
+  <thead><tr><th>日付</th><th>席</th><th>ホスト</th><th>姫</th><th>合計(¥)</th><th>歩合計(¥)</th></tr></thead>
+    {% for s in sales|reverse %}
+      <tr>
+        <td>{{ s.date }}</td>
+        <td>{{ s.seat_label }}</td>
+        <td>{{ host_map.get(s.host_id, '未登録') }}</td>
+        <td>{{ s.guest_name }}</td>
+        <td>¥{{ '%.0f'|format(s.total) }}</td>
+        <td>¥{{ '%.0f'|format(s.get('commission_total', 0)) }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
