@@ -1,0 +1,83 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<style>
+  @media print {
+    .print-actions, .topbar, .nav { display: none !important; }
+    body { background: #fff; }
+    .container { padding: 0; }
+    .invoice { box-shadow: none; border: none; }
+  }
+  .invoice {
+    background: #fff; padding: 16px; border: 1px solid #eee; border-radius: 8px;
+  }
+  .invoice-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .invoice-title { font-size: 20px; font-weight: 700; }
+  .invoice-meta { text-align: right; font-size: 14px; color: #555; }
+  .mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; } .mt16 { margin-top: 16px; }
+  .table { width: 100%; border-collapse: collapse; }
+  .table th, .table td { border: 1px solid #ddd; padding: 8px; }
+  .ta-right { text-align: right; }
+  .muted { color: #666; font-size: 12px; }
+  .print-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+</style>
+
+<div class="print-actions">
+  <button class="btn" onclick="window.print()">印刷</button>
+  <a class="btn" href="{{ url_for('admin.store_analytics') }}">戻る</a>
+</div>
+
+<div class="invoice">
+  <div class="invoice-header">
+    <div>
+      <div class="invoice-title">請求書</div>
+      <div class="mt8">
+        <div><strong>{{ store.name }}</strong></div>
+        {% if store.address %}<div class="muted">{{ store.address }}</div>{% endif %}
+        {% if store.phone %}<div class="muted">TEL: {{ store.phone }}</div>{% endif %}
+        {% if store.contact %}<div class="muted">窓口: {{ store.contact }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="invoice-meta">
+      <div>伝票番号: {{ sale.id }}</div>
+      <div>発行日: {{ sale.date }}</div>
+      <div>席: {{ sale.seat_label }}</div>
+      <div>担当: {{ host and host.name or '未登録' }}</div>
+      {% if sale.guest_name %}<div>姫: {{ sale.guest_name }}</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="mt16">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>商品</th><th class="ta-right">数量</th><th class="ta-right">単価(¥)</th><th class="ta-right">金額(¥)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(total=0) %}
+        {% for it in sale['items'] %}
+          {% set line = (it['qty'] | int) * (it['unit_price'] | int) %}
+          {% set ns.total = ns.total + line %}
+          <tr>
+            <td>{{ it['name'] }}</td>
+            <td class="ta-right">{{ it['qty'] }}</td>
+            <td class="ta-right">{{ '%.0f'|format(it['unit_price']) }}</td>
+            <td class="ta-right">{{ '%.0f'|format(line) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="3" class="ta-right">合計</th>
+          <!-- サーバ保存の合計を優先、無ければ ns.total を表示 -->
+          <th class="ta-right">¥{{ '%.0f'|format(sale['total'] if sale['total'] is not none else ns.total) }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="mt12 muted">
+    ※ 表示金額は税込表示（必要に応じて税表記を調整してください）
+  </div>
+</div>
+{% endblock %}

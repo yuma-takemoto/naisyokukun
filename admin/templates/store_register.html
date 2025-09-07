@@ -3,7 +3,7 @@
 <h2>各種登録</h2>
 
 <section class="card">
-  <h3>酒類 登録/編集</h3>
+  <h3>酒類 登録</h3>
 
   <form id="liquor-form" class="form-row" onsubmit="return false;">
   <input name="name" placeholder="酒類名（必須）" required>
@@ -13,12 +13,6 @@
   <label><input name="stock" type="number" step="1" min="0" placeholder="在庫"></label>
   <button class="btn primary" id="btn-liquor-create" type="button">追加</button>
 </form>
-
-  <ul id="liquor-list">
-    {% for l in liquors %}
-      <li data-id="{{ l.id }}">{{ l.name }} — 価格: {{ l.sale_price }} 在庫: {{ l.stock }}</li>
-    {% endfor %}
-  </ul>
 </section>
 
 <section class="card">
@@ -85,6 +79,20 @@
     <button class="btn primary" id="btn-comm-save">歩合を保存</button>
     <span class="hint">※空欄は未設定（既定値を使用）</span>
   </div>
+</section>
+
+<!-- 送信元メール（店舗）設定 -->
+<section class="card">
+  <h3>メールアドレス設定（発注メールの送信元）</h3>
+  <form id="from-email-form" onsubmit="return false;">
+    <label>送信元メールアドレス（店舗）
+      <input type="email" name="from_email"
+             placeholder="例）store@example.com"
+             value="{{ store.get('from_email','') }}">
+    </label>
+    <button class="btn primary" id="btn-save-from-email" type="button">保存</button>
+  </form>
+  <p class="hint">※ ここで設定したアドレスが、下限在庫アラートの送信元として使われます。</p>
 </section>
 
 <script>
@@ -298,6 +306,29 @@ document.getElementById('seat-form').addEventListener('submit', async (e)=>{
     }else{
       const t = await res.text().catch(()=>'-');
       alert('登録に失敗しました: ' + t);
+    }
+  });
+})();
+</script>
+
+<script>
+(function(){
+  const btn  = document.getElementById('btn-save-from-email');
+  const form = document.getElementById('from-email-form');
+  if(!btn || !form) return;
+
+  btn.addEventListener('click', async ()=>{
+    const from_email = (form.querySelector('[name="from_email"]').value || '').trim();
+    const res = await fetch('{{ url_for("admin.store_profile_update") }}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':'{{ csrf_token() }}'},
+      body: JSON.stringify({ from_email })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      alert('送信元メールを保存しました');
+    }else{
+      alert('保存に失敗しました');
     }
   });
 })();

@@ -1,32 +1,201 @@
 {% extends "store_base.html" %}
 {% block store_content %}
 <h2>ホスト一覧</h2>
+
+<style>
+  .sticky-actions{position:sticky;top:0;background:#fff;z-index:5;padding:8px 0;display:flex;gap:8px;align-items:center;border-bottom:1px solid #eee;margin-bottom:8px}
+  .chip{display:inline-block;padding:2px 8px;border-radius:12px;border:1px solid #ddd;font-size:12px}
+  .chip.on{background:#e6ffed;border-color:#b6e5c0;color:#0a6}
+  .chip.off{background:#f5f5f5;border-color:#e0e0e0;color:#666}
+  .chip.busy{background:#e6f4ff;border-color:#c6e2ff;color:#1155cc}
+  .chip.free{background:#fff0f0;border-color:#ffd0d0;color:#c00}
+  .table { width:100%; border-collapse: collapse; }
+  .table th, .table td { border:1px solid #ddd; padding:8px; }
+  .right{margin-left:auto}
+  .search{max-width:220px}
+</style>
+
 <div class="sticky-actions">
-  <div class="actions-left">
-    <button class="btn" id="sort-name">名前順</button>
+  <button id="btn-add" class="btn primary">新規追加</button>
+  <button id="btn-del" class="btn danger" style="display:none;">削除</button>
+  <div class="right">
+    <input type="search" id="q" class="search" placeholder="ホスト検索…">
   </div>
 </div>
-<ul id="host-list" class="store-list">
-  {% for h in hosts %}
-  <li class="store-item" data-name="{{ h.name }}">
-    <span class="store-main">
-      <span class="store-name">{{ h.name }}</span>
-      {% if h.id in busy_ids %}
-        <span class="badge" style="background:#16a34a;">接客中</span>
-      {% else %}
-        <span class="badge" style="background:#dc2626;">非接客</span>
-      {% endif %}
-      <a class="btn" href="{{ url_for('admin.store_host_detail', host_id=h.id) }}">詳細</a>
-    </span>
-  </li>
-  {% endfor %}
-</ul>
+
+<table class="table" id="hosts-table">
+  <thead>
+    <tr>
+      <th style="width:36px;"><input type="checkbox" id="chk-all"></th>
+      <th>名前</th>
+      <th style="width:160px;">出勤</th>
+      <th style="width:160px;">接客状態</th>
+      <th style="width:160px;">操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for h in hosts %}
+      {% set busy = h.id in busy_ids %}
+      <tr data-id="{{ h.id }}" data-name="{{ h.name }}">
+        <td><input type="checkbox" class="row-chk" value="{{ h.id }}"></td>
+        <td class="host-name">{{ h.name }}</td>
+        <td>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" class="duty-toggle" {% if h.get('on_duty') %}checked{% endif %}>
+            <span class="chip {{ 'on' if h.get('on_duty') else 'off' }}">{{ h.get('on_duty') and '出勤中' or '退勤' }}</span>
+          </label>
+        </td>
+        <td>
+          <span class="chip {{ 'busy' if busy else 'free' }}">{{ busy and '接客中' or '非接客' }}</span>
+        </td>
+        <td>
+          <a class="btn" href="{{ url_for('admin.store_host_detail', host_id=h.id) }}">詳細</a>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
 <script>
-document.getElementById('sort-name').addEventListener('click', ()=>{
-  const ul = document.getElementById('host-list');
-  const items = Array.from(ul.children);
-  items.sort((a,b)=>a.dataset.name.localeCompare(b.dataset.name,'ja'));
-  items.forEach(li=>ul.appendChild(li));
-});
+(function(){
+  const csrf = '{{ csrf_token() }}';
+  const tbl = document.getElementById('hosts-table');
+  const chkAll = document.getElementById('chk-all');
+  const btnAdd = document.getElementById('btn-add');
+  const btnDel = document.getElementById('btn-del');
+  const q = document.getElementById('q');
+
+  function selIds(){
+    return Array.from(tbl.querySelectorAll('.row-chk:checked')).map(cb=>parseInt(cb.value));
+  }
+  function updateDel(){
+    btnDel.style.display = selIds().length ? '' : 'none';
+  }
+
+  // ★ 並べ替え：出勤中→接客中→名前（昇順）
+  function reorderRows(){
+    const tbody = tbl.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a,b)=>{
+      const aOn   = a.querySelector('.duty-toggle')?.checked ? 1 : 0;
+      const bOn   = b.querySelector('.duty-toggle')?.checked ? 1 : 0;
+      if (aOn !== bOn) return bOn - aOn;              // 出勤中を先に
+
+      const aBusy = a.querySelector('.chip.busy') ? 1 : 0;
+      const bBusy = b.querySelector('.chip.busy') ? 1 : 0;
+      if (aBusy !== bBusy) return bBusy - aBusy;      // 接客中を先に
+
+      const an = (a.dataset.name || '').toString();
+      const bn = (b.dataset.name || '').toString();
+      return an.localeCompare(bn, 'ja');              // 名前昇順（日本語対応）
+    });
+    rows.forEach(r => tbody.appendChild(r));
+  }
+
+  // 検索フィルタ
+  q.addEventListener('input', ()=>{
+    const s = q.value.trim().toLowerCase();
+    tbl.querySelectorAll('tbody tr').forEach(tr=>{
+      const name = tr.dataset.name.toLowerCase();
+      tr.style.display = name.includes(s) ? '' : 'none';
+    });
+  });
+
+  // 全選択
+  chkAll.addEventListener('change', ()=>{
+    const on = chkAll.checked;
+    tbl.querySelectorAll('.row-chk').forEach(cb=>cb.checked=on);
+    updateDel();
+  });
+
+  // 個別・勤怠トグル
+  tbl.addEventListener('change', (e)=>{
+    if(e.target.classList.contains('row-chk')) updateDel();
+
+    if(e.target.classList.contains('duty-toggle')){
+      const tr = e.target.closest('tr');
+      const id = parseInt(tr.dataset.id);
+      const on = e.target.checked;
+      fetch('{{ url_for("admin.store_hosts_status") }}', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+        body: JSON.stringify({ id, on_duty: on })
+      }).then(r=>r.json().catch(()=>({}))).then(data=>{
+        if(data && data.ok){
+          const chip = tr.querySelector('.chip.on, .chip.off') || tr.querySelector('.chip');
+          chip.textContent = on ? '出勤中' : '退勤';
+          chip.classList.toggle('on', on);
+          chip.classList.toggle('off', !on);
+          reorderRows();                                // ★ トグル後に即並べ替え
+        }else{
+          alert('更新に失敗しました');
+          e.target.checked = !on;
+        }
+      }).catch(()=>{
+        alert('通信に失敗しました');
+        e.target.checked = !on;
+      });
+    }
+  });
+
+  // 追加
+  btnAdd.addEventListener('click', async ()=>{
+    const name = (prompt('ホスト名を入力してください') || '').trim();
+    if(!name) return;
+    const res = await fetch('{{ url_for("admin.store_hosts_create") }}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      const tr = document.createElement('tr');
+      tr.dataset.id = data.id;
+      tr.dataset.name = name;
+      tr.innerHTML = `
+        <td><input type="checkbox" class="row-chk" value="${data.id}"></td>
+        <td class="host-name">${name}</td>
+        <td>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" class="duty-toggle">
+            <span class="chip off">退勤</span>
+          </label>
+        </td>
+        <td><span class="chip free">非接客</span></td>
+        <td><a class="btn" href="{{ url_for('admin.store_host_detail', host_id=0) }}".replace('0','${data.id}')>詳細</a></td>
+      `;
+      tbl.querySelector('tbody').prepend(tr);
+      reorderRows();                                    // ★ 追加後も正しい位置へ
+    }else{
+      alert('追加に失敗しました');
+    }
+  });
+
+  // 削除
+  btnDel.addEventListener('click', async ()=>{
+    const ids = selIds();
+    if(!ids.length) return;
+    if(!confirm(`${ids.length}件のホストを削除します。よろしいですか？`)) return;
+    const res = await fetch('{{ url_for("admin.store_hosts_delete") }}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+      body: JSON.stringify({ ids })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      ids.forEach(id=>{
+        const tr = tbl.querySelector(`tr[data-id="${id}"]`);
+        tr?.remove();
+      });
+      updateDel();
+      reorderRows();                                    // ★ 削除後も崩れないように
+    }else{
+      alert('削除に失敗しました');
+    }
+  });
+
+  // 初期並びも保証（サーバ側でも並べ替えているが、念のため）
+  reorderRows();
+})();
 </script>
 {% endblock %}

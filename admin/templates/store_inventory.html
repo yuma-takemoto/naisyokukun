@@ -1,37 +1,111 @@
 {% extends "store_base.html" %}
 {% block store_content %}
 <h2>酒類設定</h2>
-<table class="table" id="liquor-table">
-  <thead><tr><th>名称</th><th>販売価格</th><th>原価</th><th>在庫</th><th>下限数</th><th></th></tr></thead>
-  <tbody>
-    {% for l in liquors %}
-    <tr data-id="{{ l.id }}">
-      <td><input value="{{ l.name }}" class="name"></td>
-      <td><input name="sale_price" type="number" step="1" min="0" value="{{ l.sale_price|int }}"> 円</td>
-      <td><input name="cost_price" type="number" step="1" min="0" value="{{ l.cost_price|int }}"> 円</td>
-      <td><input type="number" value="{{ l.stock }}" class="stock"></td>
-      <td><input type="number" value="{{ l.reorder_point }}" class="reorder"></td>
-      <td><button class="btn save">保存</button></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+
+<style>
+  .liquor-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+  .liquor-card{border:1px solid #eee;border-radius:8px;padding:12px;background:#fff}
+  .liquor-name{font-weight:700;margin-bottom:8px}
+  .row{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .row input[type="number"]{width:120px}
+  .row input[type="text"]{flex:1;min-width:260px}
+  .muted{font-size:12px;color:#888}
+  .actions{margin-top:10px;display:flex;gap:8px}
+  .btn.danger{background:#e53935;color:#fff;border-color:#e53935}
+</style>
+
+<p class="muted">
+  ※ 価格・原価・下限・在庫はここで編集できます。各酒類の在庫が
+  <strong>下限値にちょうど一致した瞬間に1回だけ</strong>
+  自動通知メールを送ります（在庫が下限より上に戻ると再び通知可能になります）。
+</p>
+
+<div class="liquor-list">
+  {% for l in liquors %}
+  <div class="liquor-card" data-id="{{ l.id }}">
+    <div class="liquor-name">{{ l.name }}</div>
+
+    <div class="row">
+      <label>販売価格 <input class="sale" type="number" step="1" min="0" placeholder="販売価格" value="{{ l.sale_price|int }}"> 円</label>
+      <label>原価 <input class="cost" type="number" step="1" min="0" placeholder="原価" value="{{ l.cost_price|int }}"> 円</label>
+    </div>
+    <div class="row">
+      <label>下限数 <input class="reorder" type="number" step="1" min="0" placeholder="下限数" value="{{ l.reorder_point|int }}"></label>
+      <label>在庫 <input class="stock" type="number" step="1" min="0" placeholder="在庫" value="{{ l.stock|int }}"></label>
+    </div>
+
+    <!-- 発注先メール & 宛名 -->
+    <div class="row">
+      <input class="vendor-email" type="text" placeholder="発注先メール（カンマ区切り可）" value="{{ l.vendor_email or '' }}">
+      <input class="vendor-name"  type="text" placeholder="発注先名称（例：株式会社◯◯ 担当△△）" value="{{ l.vendor_name or '' }}">
+    </div>
+
+    <div class="actions">
+      <button class="btn save">保存</button>
+      <button class="btn danger delete">削除</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
 <script>
-document.querySelectorAll('#liquor-table .save').forEach(btn=>{
-  btn.addEventListener('click', async ()=>{
-    const tr = btn.closest('tr');
-    const payload = {
-      id: parseInt(tr.dataset.id),
-      name: tr.querySelector('.name').value,
-      sale_price: parseFloat(tr.querySelector('.sale').value||0),
-      cost_price: parseFloat(tr.querySelector('.cost').value||0),
-      stock: parseInt(tr.querySelector('.stock').value||0),
-      reorder_point: parseInt(tr.querySelector('.reorder').value||0)
-    };
-    const res = await fetch('{{ url_for("admin.store_liquors_update") }}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(res.ok) alert('保存しました');
-    else alert('保存に失敗しました');
+(function(){
+  const csrf = '{{ csrf_token() }}';
+
+  document.querySelectorAll('.liquor-card').forEach(card=>{
+    const id        = parseInt(card.dataset.id);
+    const saleEl    = card.querySelector('.sale');
+    const costEl    = card.querySelector('.cost');
+    const reorderEl = card.querySelector('.reorder');
+    const stockEl   = card.querySelector('.stock');
+    const emailEl   = card.querySelector('.vendor-email');
+    const nameEl    = card.querySelector('.vendor-name');
+    const btnSave   = card.querySelector('.save');
+    const btnDel    = card.querySelector('.delete');
+
+    // 保存
+    btnSave.addEventListener('click', async ()=>{
+      const payload = {
+        id,
+        sale_price:    parseInt(saleEl.value || '0', 10) || 0,
+        cost_price:    parseInt(costEl.value || '0', 10) || 0,
+        reorder_point: parseInt(reorderEl.value || '0', 10) || 0,
+        stock:         parseInt(stockEl.value || '0', 10) || 0,
+        vendor_email:  (emailEl.value || '').trim(),
+        vendor_name:   (nameEl.value || '').trim()
+      };
+
+      const res = await fetch('{{ url_for("admin.store_liquors_update") }}', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+        body: JSON.stringify(payload)
+      });
+      let data = {};
+      try { data = await res.json(); } catch(e){}
+      if (res.ok && data.ok){
+        alert('保存しました');
+      } else {
+        alert('保存に失敗しました: ' + (data.error || (res.status + ' ' + (data||''))));
+      }
+    });
+
+    // 削除
+    btnDel.addEventListener('click', async ()=>{
+      if(!confirm('この酒類を削除します。よろしいですか？')) return;
+      const res = await fetch('{{ url_for("admin.store_liquors_delete") }}', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+        body: JSON.stringify({ ids: [id] })
+      });
+      let data = {};
+      try { data = await res.json(); } catch(e){}
+      if (res.ok && data.ok){
+        card.remove(); // 画面から即削除
+      } else {
+        alert('削除に失敗しました: ' + (data.error || (res.status + ' ' + (data||''))));
+      }
+    });
   });
-});
+})();
 </script>
 {% endblock %}

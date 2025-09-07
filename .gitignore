@@ -5,3 +5,5 @@ instance/*.json
 instance/*.db
 .env
 .DS_Store
+.vscode/
+instance/settings.json

@@ -102,3 +102,5 @@ h1 { margin: 8px 0 16px; }
   padding: 8px 0; display: flex; gap: 8px; align-items: center;
   border-bottom: 1px solid #eee; margin-bottom: 8px;
 }
+/* 小さめボタン（任意） */
+.btn.btn-sm { padding: 2px 8px; font-size: 12px; }
