@@ -1,0 +1,126 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>顧客詳細</h2>
+
+<div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+  <div class="card">
+    <h3>プロフィール</h3>
+
+    <label>姫の名前
+      <input id="name" value="{{ c.name or '' }}">
+    </label>
+
+    <label>担当ホスト
+      <select id="default_host_id">
+        <option value="0">未設定</option>
+        {% for h in hosts %}
+          <option value="{{ h.id }}" {% if (h.id|int) == (c.default_host_id|int) %}selected{% endif %}>{{ h.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>誕生日（YYYY-MM-DD または MM-DD）
+      <input id="birthday" value="{{ c.birthday or '' }}" placeholder="07-23 または 1995-07-23">
+    </label>
+
+    <label>キープ（名称）
+      <input id="keep_liquor_name" value="{{ c.keep_liquor_name or '' }}" placeholder="例：シャンパン">
+    </label>
+
+    <h3>現在のNGホスト（保存済み）</h3>
+    <div id="ng_current" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:28px;">
+      {% if ng_names and ng_names|length > 0 %}
+        {% for nm in ng_names %}
+          <span class="chip" style="display:inline-block;padding:.2rem .5rem;border-radius:9999px;border:1px solid #888;font-size:.9em;">
+            {{ nm }}
+          </span>
+        {% endfor %}
+      {% else %}
+        <span style="color:#888;">設定なし</span>
+      {% endif %}
+    </div>
+
+
+
+    <h3 style="margin-top:12px;">NGホスト（編集・複数選択可）</h3>
+    <select id="ng_host_ids" multiple size="8" style="width:100%">
+      {% for h in hosts %}
+        <option value="{{ h.id }}" {% if (h.id|int) in ng_ids_saved %}selected{% endif %}>{{ h.name }}</option>
+      {% endfor %}
+    </select>
+
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn" id="save">保存</button>
+      <button class="btn danger" id="delete">削除</button>
+      <a class="btn" href="{{ url_for('admin.store_customers') }}">戻る</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>来店履歴</h3>
+    {% if visits %}
+      <ul>
+        {% for v in visits %}
+          <li>{{ v.ts }} / 席: {{ v.seat_label or '-' }} / {{ v.action }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>履歴なし</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function(){
+  const csrf='{{ csrf_token() }}';
+  const cid=Number('{{ c.id }}') || 0;
+
+  function valMulti(sel){
+    return Array.from(sel.selectedOptions)
+      .map(o=>parseInt(o.value,10))
+      .filter(n=>!isNaN(n));
+  }
+
+  // 保存
+  document.getElementById('save').addEventListener('click', async ()=>{
+    const payload={
+      id: cid,
+      name: document.getElementById('name').value.trim(),
+      default_host_id: parseInt(document.getElementById('default_host_id').value||0,10),
+      birthday: document.getElementById('birthday').value.trim(),
+      keep_liquor_name: document.getElementById('keep_liquor_name').value.trim(),
+      ng_host_ids: valMulti(document.getElementById('ng_host_ids')),
+    };
+    const res = await fetch('{{ url_for("admin.store_customers_save") }}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify(payload)
+    });
+    if(res.ok){
+      alert('保存しました');
+      location.reload(); // 保存済みNGの表示を更新
+    }else{
+      const d = await res.json().catch(()=>({}));
+      alert('保存に失敗しました: ' + (d.error || res.status));
+    }
+  });
+
+  // 削除
+  document.getElementById('delete').addEventListener('click', async ()=>{
+    if(!confirm('この顧客を削除します。よろしいですか？（元に戻せません）')) return;
+    const res = await fetch('{{ url_for("admin.store_customers_delete") }}', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify({ id: cid })
+    });
+    if(res.ok){
+      alert('削除しました');
+      location.href='{{ url_for("admin.store_customers") }}';
+    }else{
+      const d = await res.json().catch(()=>({}));
+      alert('削除に失敗しました: ' + (d.error || res.status));
+    }
+  });
+})();
+</script>
+{% endblock %}

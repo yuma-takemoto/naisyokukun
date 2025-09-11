@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{{ store.name }}（店舗） | 内職君</title>
+  <title>{{ store.name }} | 内職君</title>
   <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet" />
 </head>
 <script>
@@ -21,9 +21,10 @@
 </script>
 <body>
   <header class="topbar">
-    <div class="brand">{{ store.name }}（店舗）</div>
+    <div class="brand">{{ store.name }}<span class="muted">店舗ID: {{ store.id }}</span></div>
     <nav class="nav">
       <a href="{{ url_for('admin.store_hosts') }}">ホスト一覧</a>
+      <a href="{{ url_for('admin.store_customers') }}" class="{{ 'active' if active=='customers' else '' }}">顧客管理</a>
       <a href="{{ url_for('admin.store_ops') }}">営業状況</a>
       <a href="{{ url_for('admin.store_analytics') }}">データ解析</a>
       <a href="{{ url_for('admin.store_inventory') }}">酒類設定</a>

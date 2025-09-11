@@ -3,199 +3,196 @@
 <h2>ホスト一覧</h2>
 
 <style>
-  .sticky-actions{position:sticky;top:0;background:#fff;z-index:5;padding:8px 0;display:flex;gap:8px;align-items:center;border-bottom:1px solid #eee;margin-bottom:8px}
-  .chip{display:inline-block;padding:2px 8px;border-radius:12px;border:1px solid #ddd;font-size:12px}
-  .chip.on{background:#e6ffed;border-color:#b6e5c0;color:#0a6}
-  .chip.off{background:#f5f5f5;border-color:#e0e0e0;color:#666}
-  .chip.busy{background:#e6f4ff;border-color:#c6e2ff;color:#1155cc}
-  .chip.free{background:#fff0f0;border-color:#ffd0d0;color:#c00}
-  .table { width:100%; border-collapse: collapse; }
-  .table th, .table td { border:1px solid #ddd; padding:8px; }
-  .right{margin-left:auto}
-  .search{max-width:220px}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .toolbar .right{margin-left:auto}
+  .table{width:100%;border-collapse:collapse}
+  .table th,.table td{border-bottom:1px solid #eee;padding:8px;text-align:left}
+  .badge{display:inline-block;border:1px solid #ccc;border-radius:999px;padding:2px 8px;font-size:12px}
+  .badge.on{border-color:#2e7d32;color:#2e7d32}
+  .badge.busy{border-color:#1976d2;color:#1976d2}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+  .modal[hidden]{display:none}
+  .modal .content{background:#fff;padding:16px;border-radius:10px;min-width:320px;max-width:90vw}
+  .row{display:flex;gap:8px;align-items:center;margin:6px 0}
+  .row input[type="text"]{flex:1}
+  .actions{display:flex;gap:8px}
 </style>
 
-<div class="sticky-actions">
-  <button id="btn-add" class="btn primary">新規追加</button>
-  <button id="btn-del" class="btn danger" style="display:none;">削除</button>
-  <div class="right">
-    <input type="search" id="q" class="search" placeholder="ホスト検索…">
-  </div>
+<div class="toolbar">
+  <input id="new-name" placeholder="ホスト名（必須）">
+  <button class="btn" id="btn-add">追加</button>
+  <button class="btn danger" id="btn-del" style="display:none;">削除</button>
+  <div class="right"><span class="hint">出勤中▲ → 接客中▲ → 名前昇順</span></div>
 </div>
 
 <table class="table" id="hosts-table">
   <thead>
     <tr>
-      <th style="width:36px;"><input type="checkbox" id="chk-all"></th>
+      <th style="width:36px"><input type="checkbox" id="chk-all"></th>
       <th>名前</th>
-      <th style="width:160px;">出勤</th>
-      <th style="width:160px;">接客状態</th>
-      <th style="width:160px;">操作</th>
+      <th>ID</th>
+      <th>出勤</th>
+      <th>接客</th>
+      <th>LINE userId</th>
+      <th style="width:180px">操作</th>
     </tr>
   </thead>
   <tbody>
     {% for h in hosts %}
-      {% set busy = h.id in busy_ids %}
-      <tr data-id="{{ h.id }}" data-name="{{ h.name }}">
+      {% set is_busy = (h.id in busy_ids) %}
+      <tr data-id="{{ h.id }}">
         <td><input type="checkbox" class="row-chk" value="{{ h.id }}"></td>
-        <td class="host-name">{{ h.name }}</td>
+        <td class="name">{{ h.name }}</td>
+        <td>{{ h.id }}</td>
         <td>
-          <label style="display:flex;align-items:center;gap:8px;">
-            <input type="checkbox" class="duty-toggle" {% if h.get('on_duty') %}checked{% endif %}>
-            <span class="chip {{ 'on' if h.get('on_duty') else 'off' }}">{{ h.get('on_duty') and '出勤中' or '退勤' }}</span>
+          <label>
+            <input type="checkbox" class="on-duty" {% if h.on_duty %}checked{% endif %}>
+            <span class="badge on {{ 'dim' if not h.on_duty else '' }}">出勤中</span>
           </label>
         </td>
         <td>
-          <span class="chip {{ 'busy' if busy else 'free' }}">{{ busy and '接客中' or '非接客' }}</span>
+          <span class="badge {{ 'busy' if is_busy }}">{{ '接客中' if is_busy else '—' }}</span>
         </td>
+        <td class="line">{{ h.line_user_id or '' }}</td>
         <td>
-          <a class="btn" href="{{ url_for('admin.store_host_detail', host_id=h.id) }}">詳細</a>
+          <div class="actions">
+            <a class="btn" href="{{ url_for('admin.store_host_detail', host_id=h.id) }}">詳細</a>
+            <button class="btn edit-name">名前変更</button>
+          </div>
         </td>
       </tr>
     {% endfor %}
   </tbody>
 </table>
 
+<!-- 名前変更モーダル（LINE userId は表示のみ） -->
+<div class="modal" id="edit-modal" hidden>
+  <div class="content">
+    <h3>ホスト編集</h3>
+    <input type="hidden" id="edit-id">
+    <div class="row"><label>名前 <input id="edit-name" type="text" required></label></div>
+    <div class="row"><label>LINE userId <input id="edit-line" type="text" readonly></label></div>
+    <div class="row" style="justify-content:flex-end;gap:8px;">
+      <button class="btn" id="edit-cancel">キャンセル</button>
+      <button class="btn primary" id="edit-save">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
-  const csrf = '{{ csrf_token() }}';
-  const tbl = document.getElementById('hosts-table');
-  const chkAll = document.getElementById('chk-all');
-  const btnAdd = document.getElementById('btn-add');
-  const btnDel = document.getElementById('btn-del');
-  const q = document.getElementById('q');
+  const csrf='{{ csrf_token() }}';
+  const $ = s => document.querySelector(s);
+  const $$ = s => Array.from(document.querySelectorAll(s));
 
-  function selIds(){
-    return Array.from(tbl.querySelectorAll('.row-chk:checked')).map(cb=>parseInt(cb.value));
+  const tbl = $('#hosts-table tbody');
+  const chkAll = $('#chk-all');
+  const btnAdd = $('#btn-add');
+  const btnDel = $('#btn-del');
+  const inputNew = $('#new-name');
+
+  function selectedIds(){
+    return $$('.row-chk').filter(x=>x.checked).map(x=>parseInt(x.value));
   }
-  function updateDel(){
-    btnDel.style.display = selIds().length ? '' : 'none';
+  function updateDelBtn(){
+    btnDel.style.display = selectedIds().length ? '' : 'none';
   }
-
-  // ★ 並べ替え：出勤中→接客中→名前（昇順）
-  function reorderRows(){
-    const tbody = tbl.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    rows.sort((a,b)=>{
-      const aOn   = a.querySelector('.duty-toggle')?.checked ? 1 : 0;
-      const bOn   = b.querySelector('.duty-toggle')?.checked ? 1 : 0;
-      if (aOn !== bOn) return bOn - aOn;              // 出勤中を先に
-
-      const aBusy = a.querySelector('.chip.busy') ? 1 : 0;
-      const bBusy = b.querySelector('.chip.busy') ? 1 : 0;
-      if (aBusy !== bBusy) return bBusy - aBusy;      // 接客中を先に
-
-      const an = (a.dataset.name || '').toString();
-      const bn = (b.dataset.name || '').toString();
-      return an.localeCompare(bn, 'ja');              // 名前昇順（日本語対応）
-    });
-    rows.forEach(r => tbody.appendChild(r));
-  }
-
-  // 検索フィルタ
-  q.addEventListener('input', ()=>{
-    const s = q.value.trim().toLowerCase();
-    tbl.querySelectorAll('tbody tr').forEach(tr=>{
-      const name = tr.dataset.name.toLowerCase();
-      tr.style.display = name.includes(s) ? '' : 'none';
-    });
-  });
-
-  // 全選択
-  chkAll.addEventListener('change', ()=>{
-    const on = chkAll.checked;
-    tbl.querySelectorAll('.row-chk').forEach(cb=>cb.checked=on);
-    updateDel();
-  });
-
-  // 個別・勤怠トグル
-  tbl.addEventListener('change', (e)=>{
-    if(e.target.classList.contains('row-chk')) updateDel();
-
-    if(e.target.classList.contains('duty-toggle')){
-      const tr = e.target.closest('tr');
-      const id = parseInt(tr.dataset.id);
-      const on = e.target.checked;
-      fetch('{{ url_for("admin.store_hosts_status") }}', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
-        body: JSON.stringify({ id, on_duty: on })
-      }).then(r=>r.json().catch(()=>({}))).then(data=>{
-        if(data && data.ok){
-          const chip = tr.querySelector('.chip.on, .chip.off') || tr.querySelector('.chip');
-          chip.textContent = on ? '出勤中' : '退勤';
-          chip.classList.toggle('on', on);
-          chip.classList.toggle('off', !on);
-          reorderRows();                                // ★ トグル後に即並べ替え
-        }else{
-          alert('更新に失敗しました');
-          e.target.checked = !on;
-        }
-      }).catch(()=>{
-        alert('通信に失敗しました');
-        e.target.checked = !on;
-      });
-    }
-  });
 
   // 追加
   btnAdd.addEventListener('click', async ()=>{
-    const name = (prompt('ホスト名を入力してください') || '').trim();
-    if(!name) return;
+    const name = (inputNew.value||'').trim();
+    if(!name){ alert('名前を入力してください'); return; }
     const res = await fetch('{{ url_for("admin.store_hosts_create") }}', {
       method:'POST',
-      headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
       body: JSON.stringify({ name })
     });
     const data = await res.json().catch(()=>({}));
     if(res.ok && data.ok){
-      const tr = document.createElement('tr');
-      tr.dataset.id = data.id;
-      tr.dataset.name = name;
-      tr.innerHTML = `
-        <td><input type="checkbox" class="row-chk" value="${data.id}"></td>
-        <td class="host-name">${name}</td>
-        <td>
-          <label style="display:flex;align-items:center;gap:8px;">
-            <input type="checkbox" class="duty-toggle">
-            <span class="chip off">退勤</span>
-          </label>
-        </td>
-        <td><span class="chip free">非接客</span></td>
-        <td><a class="btn" href="{{ url_for('admin.store_host_detail', host_id=0) }}".replace('0','${data.id}')>詳細</a></td>
-      `;
-      tbl.querySelector('tbody').prepend(tr);
-      reorderRows();                                    // ★ 追加後も正しい位置へ
+      location.reload();
     }else{
       alert('追加に失敗しました');
     }
   });
 
-  // 削除
+  // 一括削除
   btnDel.addEventListener('click', async ()=>{
-    const ids = selIds();
+    const ids = selectedIds();
     if(!ids.length) return;
-    if(!confirm(`${ids.length}件のホストを削除します。よろしいですか？`)) return;
+    if(!confirm('選択したホストを削除します。よろしいですか？')) return;
     const res = await fetch('{{ url_for("admin.store_hosts_delete") }}', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
       body: JSON.stringify({ ids })
     });
     const data = await res.json().catch(()=>({}));
-    if(res.ok && data.ok){
-      ids.forEach(id=>{
-        const tr = tbl.querySelector(`tr[data-id="${id}"]`);
-        tr?.remove();
-      });
-      updateDel();
-      reorderRows();                                    // ★ 削除後も崩れないように
-    }else{
-      alert('削除に失敗しました');
+    if(res.ok && data.ok){ location.reload(); } else { alert('削除に失敗しました'); }
+  });
+
+  // 全選択
+  chkAll.addEventListener('change', ()=>{
+    $$('.row-chk').forEach(x=> x.checked = chkAll.checked);
+    updateDelBtn();
+  });
+  tbl.addEventListener('change', (e)=>{
+    if(e.target.classList.contains('row-chk')) updateDelBtn();
+  });
+
+  // 出勤トグル
+  tbl.addEventListener('change', async (e)=>{
+    if(!e.target.classList.contains('on-duty')) return;
+    const tr = e.target.closest('tr');
+    const id = parseInt(tr.dataset.id);
+    const on = !!e.target.checked;
+    const badge = tr.querySelector('.badge.on');
+    if(badge){ badge.style.opacity = on ? '1' : '.35'; }
+    const res = await fetch('{{ url_for("admin.store_hosts_status") }}', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify({ id, on_duty: on })
+    });
+    if(!res.ok){
+      alert('更新に失敗しました');
+      e.target.checked = !on;
+      if(badge){ badge.style.opacity = (!on) ? '1' : '.35'; }
+    } else {
+      location.reload();
     }
   });
 
-  // 初期並びも保証（サーバ側でも並べ替えているが、念のため）
-  reorderRows();
+  // 名前変更モーダル（LINE userId は表示のみ・送信しない）
+  const modal = $('#edit-modal');
+  const editId = $('#edit-id');
+  const editName = $('#edit-name');
+  const editLine = $('#edit-line');
+
+  tbl.addEventListener('click', (e)=>{
+    if(!e.target.classList.contains('edit-name')) return;
+    const tr = e.target.closest('tr');
+    editId.value = tr.dataset.id;
+    editName.value = tr.querySelector('.name').textContent.trim();
+    editLine.value = (tr.querySelector('.line').textContent || '').trim();
+    modal.hidden = false;
+  });
+  $('#edit-cancel').addEventListener('click', ()=> modal.hidden=true);
+  modal.addEventListener('click', (e)=>{ if(e.target===modal) modal.hidden=true; });
+
+  $('#edit-save').addEventListener('click', async ()=>{
+    const payload = {
+      id: parseInt(editId.value),
+      name: editName.value.trim()
+      // line_user_id は送らない（サーバ側でも無視されます）
+    };
+    const res = await fetch('{{ url_for("admin.store_hosts_update") }}', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      modal.hidden = true;
+      location.reload();
+    }else{
+      alert('保存に失敗しました');
+    }
+  });
 })();
 </script>
 {% endblock %}

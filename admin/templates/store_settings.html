@@ -1,0 +1,35 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>店舗設定</h2>
+
+<form method="post" class="card" style="max-width:720px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="field">
+    <label>発注メールの送信元（From）
+      <input name="from_email" type="email" value="{{ store.from_email or '' }}" placeholder="noreply@example.com">
+    </label>
+  </div>
+
+  <div class="field">
+    <label>休眠アラート日数
+      <input name="dormant_days" type="number" min="1"
+             value="{{ (s.get('dormant_days_by_store',{}) or {}).get(str(store.id), 30) }}">
+    </label>
+    <small class="help">最終来店からこの日数以上来ていない姫を「最近来店がない姫」に表示します。</small>
+  </div>
+
+  <div class="field">
+    <label>誕生日の表示ウィンドウ（日）
+      <input name="birthday_window_days" type="number" min="1"
+             value="{{ (s.get('birthday_window_days_by_store',{}) or {}).get(str(store.id), 7) }}">
+    </label>
+    <small class="help">今後この日数以内に誕生日の姫を一覧の上部に表示します。</small>
+  </div>
+
+  <div style="margin-top:12px;">
+    <button class="btn" type="submit">保存</button>
+    {% if saved %}<span style="margin-left:8px;color:var(--ok, #0a0);">保存しました</span>{% endif %}
+  </div>
+</form>
+{% endblock %}

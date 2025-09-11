@@ -61,16 +61,15 @@
 </div>
 
 <script>
-/* === 共有ヘルパ：全セレクトの表記・data属性を更新する === */
 function updateLiquorOptionTexts(mapById){
   document.querySelectorAll('select.liquor').forEach(sel=>{
     Array.from(sel.options).forEach(opt=>{
-      const id = parseInt(opt.value);
+      const id = parseInt(opt.value,10);
       const info = mapById[id];
       if(!info) return;
-      const name  = (info.name ?? opt.text.split('（')[0]);
-      const price = parseInt((info.sale_price ?? opt.dataset.price ?? '0'), 10);
-      const stock = parseInt((info.stock ?? opt.dataset.stock ?? '0'), 10);
+      const name  = info.name ?? opt.text.split('（')[0];
+      const price = parseInt(info.sale_price ?? opt.dataset.price ?? '0', 10);
+      const stock = parseInt(info.stock ?? opt.dataset.stock ?? '0', 10);
       opt.dataset.price = String(price);
       opt.dataset.stock = String(stock);
       opt.text = `${name}（¥${price} / 在庫${stock}）`;
@@ -79,11 +78,10 @@ function updateLiquorOptionTexts(mapById){
 }
 
 (function(){
-  const csrf = '{{ csrf_token() }}';
+  const csrf='{{ csrf_token() }}';
 
-  /* === 各カードのイベント === */
   document.querySelectorAll('.card').forEach(card=>{
-    const id        = parseInt(card.dataset.id);
+    const id        = parseInt(card.dataset.id,10);
     const guest     = card.querySelector('.guest');
     const hostSel   = card.querySelector('.host');
     const stateText = card.querySelector('.state-text');
@@ -103,7 +101,7 @@ function updateLiquorOptionTexts(mapById){
       return res.ok;
     }
 
-    // 状態切替（空席⇄接客中）
+    // 空席⇄接客中
     btnOpen.addEventListener('click', async ()=>{
       const open = (stateText.textContent.trim() === '空席'); // 空席→接客中
       if (await saveSeat({ open, guest_name: guest.value, host_id: parseInt(hostSel.value||0) })) {
@@ -115,14 +113,14 @@ function updateLiquorOptionTexts(mapById){
       }
     });
 
-    // 担当/姫名の変更反映
+    // 担当/姫名変更
     guest.addEventListener('change', ()=> saveSeat({ guest_name: guest.value }));
     hostSel.addEventListener('change', ()=> saveSeat({ host_id: parseInt(hostSel.value||0) }));
 
-    // 注文追加
+    // 注文追加：DOMは更新しない（SSEのorder_addedで描画）
     card.querySelector('.add').addEventListener('click', async ()=>{
-      const liquorId = parseInt(liquorSel.value);
-      const qty      = Math.max(1, parseInt(qtyInput.value||1));
+      const liquorId = parseInt(liquorSel.value,10);
+      const qty      = Math.max(1, parseInt(qtyInput.value||1,10));
 
       const res = await fetch('{{ url_for("admin.store_ops_order") }}', {
         method:'POST',
@@ -130,21 +128,10 @@ function updateLiquorOptionTexts(mapById){
         body: JSON.stringify({ seat_id: id, liquor_id: liquorId, qty })
       });
       const data = await res.json().catch(()=>({}));
-
       if (res.ok && data.ok){
-        // 明細に行を追加
-        const name  = data.name || liquorSel.selectedOptions[0].text.split('（')[0];
-        const price = parseInt((data.unit_price ?? liquorSel.selectedOptions[0].dataset.price ?? '0'), 10);
-        const li = document.createElement('li');
-        li.textContent = `${name} x ${qty} = ¥${price * qty}`;
-        itemsUL.appendChild(li);
-
-        // 在庫の即時反映（全カードのセレクトに反映）
         const map = {};
-        map[data.liquor_id] = { name, sale_price: price, stock: data.stock };
+        map[data.liquor_id] = { name: data.name, sale_price: data.unit_price, stock: data.stock };
         updateLiquorOptionTexts(map);
-
-        alert('追加しました（在庫も自動減算）');
       } else if (data.error === 'no_stock') {
         alert('在庫が足りません');
       } else {
@@ -155,60 +142,152 @@ function updateLiquorOptionTexts(mapById){
     // 会計
     card.querySelector('.checkout').addEventListener('click', async ()=>{
       if(!confirm('会計を確定します。よろしいですか？')) return;
-
-    try{
-      const res = await fetch('{{ url_for("admin.store_ops_checkout") }}', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
-        body: JSON.stringify({ seat_id: id })
-      });
-      const data = await res.json().catch(()=>({}));
-
-      if (res.ok && data.ok){
-        // 請求書タブを開く
-        if (data.invoice_url) window.open(data.invoice_url, '_blank');
-
-        // 画面上の席状態をリセット
-        itemsUL.innerHTML = '';
-        stateText.textContent = '空席';
-        stateChip.classList.remove('is-open');
-        stateChip.classList.add('is-empty');
-        btnOpen.textContent = '接客中にする';
-        guest.value = '';
-        hostSel.value = '0';
-      } else {
-        alert('会計に失敗しました');
-      }
+      try{
+        const res = await fetch('{{ url_for("admin.store_ops_checkout") }}', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
+          body: JSON.stringify({ seat_id: id })
+        });
+        const data = await res.json().catch(()=>({}));
+        if (res.ok && data.ok){
+          if (data.invoice_url) window.open(data.invoice_url, '_blank');
+          itemsUL.innerHTML = '';
+          stateText.textContent = '空席';
+          stateChip.classList.remove('is-open');
+          stateChip.classList.add('is-empty');
+          btnOpen.textContent = '接客中にする';
+          guest.value = '';
+          hostSel.value = '0';
+        } else {
+          alert('会計に失敗しました');
+        }
       }catch(e){
-    alert('会計リクエスト自体に失敗しました：' + e);
+        alert('会計リクエスト自体に失敗しました：' + e);
       }
     });
   });
 
-  /* === 在庫リアルタイム反映：定期ポーリング ===
-     他端末での注文も含め、在庫/価格表示を最新化します。 */
+  // 定期ポーリング（SSEが落ちた時の保険）
   async function pollLiquors(){
     try{
       const r = await fetch('{{ url_for("admin.store_liquors_status") }}', { method:'GET' });
       const d = await r.json();
       if(d && d.ok){
         const map = {};
-        for(const liq of d.liquors){
-          map[parseInt(liq.id)] = {
-            name: liq.name,
-            sale_price: parseInt(liq.sale_price || 0, 10),
-            stock: parseInt(liq.stock || 0, 10)
-          };
+        for(const it of (d.items||[])){
+          map[parseInt(it.id,10)] = { name: it.name, sale_price: parseInt(it.sale_price||0,10), stock: parseInt(it.stock||0,10) };
         }
         updateLiquorOptionTexts(map);
       }
-    }catch(e){
-      // ネットワークエラーは無視して次回
-    }finally{
-      setTimeout(pollLiquors, 8000); // 8秒ごと
+    }catch(e){}finally{
+      setTimeout(pollLiquors, 8000);
     }
   }
   pollLiquors();
+
+  // ===== SSE（単一）=====
+  if (!window.__OPS_SSE_INITIALIZED__) {
+    window.__OPS_SSE_INITIALIZED__ = true;
+    const es = new EventSource('{{ url_for("admin.store_events") }}');
+    es.addEventListener('ping', () => {});
+
+    es.onmessage = (e)=>{
+      if(!e.data) return;
+      let msg = {};
+      try { msg = JSON.parse(e.data); } catch(_){ return; }
+      const type = msg.type;
+      const data = msg.data || {};
+
+      if(type === 'inventory_update'){
+        const map = {};
+        map[parseInt(data.id,10)] = {
+          name: data.name,
+          sale_price: parseInt(data.sale_price||0,10),
+          stock: parseInt(data.stock||0,10)
+        };
+        updateLiquorOptionTexts(map);
+      }
+
+      if(type === 'liquor_deleted'){
+        const id = String(data.id);
+        document.querySelectorAll('select.liquor').forEach(sel=>{
+          Array.from(sel.options).forEach(opt=>{
+            if(opt.value === id) opt.remove();
+          });
+        });
+      }
+
+      if(type === 'order_added'){
+        const card = document.querySelector(`.card[data-id="${data.seat_id}"]`);
+        if(!card) return;
+        const ul = card.querySelector('.items');
+        const it = data.item || {};
+        const qty = parseInt(it.qty||0,10);
+        const up  = parseInt(it.unit_price||0,10);
+        const li = document.createElement('li');
+        li.textContent = `${it.name||''} x ${qty} = ¥${qty*up}`;
+        ul.appendChild(li);
+      }
+
+      if(type === 'seat_update'){
+        const card = document.querySelector(`.card[data-id="${data.id}"]`);
+        if(!card) return;
+        const stateText = card.querySelector('.state-text');
+        const stateChip = card.querySelector('.state-chip');
+        const btnOpen   = card.querySelector('.mark-open');
+        const hostSel   = card.querySelector('.host');
+        const guestInp  = card.querySelector('.guest');
+
+        if(typeof data.open !== 'undefined'){
+          const isOpen = !!data.open;
+          stateText.textContent = isOpen ? '接客中' : '空席';
+          stateChip.classList.toggle('is-open',  isOpen);
+          stateChip.classList.toggle('is-empty', !isOpen);
+          if(btnOpen) btnOpen.textContent = isOpen ? '空席にする' : '接客中にする';
+        }
+        if(typeof data.guest_name !== 'undefined' && guestInp){
+          guestInp.value = data.guest_name || '';
+        }
+        if(typeof data.host_id !== 'undefined' && hostSel){
+          hostSel.value = String(data.host_id || 0);
+        }
+        if(Array.isArray(data.items)){
+          const ul = card.querySelector('.items');
+          if(ul){
+            ul.innerHTML = '';
+            for(const it of data.items){
+              const li = document.createElement('li');
+              const q = parseInt(it.qty||0,10), up = parseInt(it.unit_price||0,10);
+              li.textContent = `${it.name||''} x ${q} = ¥${q*up}`;
+              ul.appendChild(li);
+            }
+          }
+        }
+      }
+
+      if(type === 'checkout_done'){
+        const card = document.querySelector(`.card[data-id="${data.seat_id}"]`);
+        if(card){
+          (card.querySelector('.items')||{}).innerHTML = '';
+          const stateText = card.querySelector('.state-text');
+          const stateChip = card.querySelector('.state-chip');
+          const btnOpen   = card.querySelector('.mark-open');
+          const guest     = card.querySelector('.guest');
+          const hostSel   = card.querySelector('.host');
+          if(stateText) stateText.textContent = '空席';
+          if(stateChip){
+            stateChip.classList.remove('is-open');
+            stateChip.classList.add('is-empty');
+          }
+          if(btnOpen) btnOpen.textContent = '接客中にする';
+          if(guest) guest.value = '';
+          if(hostSel) hostSel.value = '0';
+        }
+        if(data.invoice_url){ window.open(data.invoice_url, '_blank'); }
+      }
+    };
+    es.onerror = ()=>{};
+  }
 })();
 </script>
 {% endblock %}

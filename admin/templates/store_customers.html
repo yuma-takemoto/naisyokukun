@@ -1,0 +1,68 @@
+{% extends "store_base.html" %}
+{% block store_content %}
+<h2>顧客管理</h2>
+
+<!-- ウィジェット行 -->
+<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:16px;">
+  <div class="card">
+    <h3>今後 {{ bdays_window }} 日以内に誕生日の姫</h3>
+    {% if upcoming_birthdays %}
+      <ul>
+        {% for b in upcoming_birthdays %}
+          <li>
+            <a href="{{ url_for('admin.store_customer_detail', cid=b.id) }}">{{ b.name }}</a>
+            （{{ b.birthday }} / あと {{ b.days_left }} 日）
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>該当なし</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>最近来店がない姫（{{ dormant_days }}日以上）</h3>
+    {% if dormant_list %}
+      <ul>
+        {% for d in dormant_list[:20] %}
+          <li>
+            <a href="{{ url_for('admin.store_customer_detail', cid=b.id) }}">{{ b.name }}</a>
+            … {{ d.days }}
+          </li>
+        {% endfor %}
+      </ul>
+      {% if dormant_list|length > 20 %}<p>他 {{ dormant_list|length - 20 }} 名</p>{% endif %}
+    {% else %}
+      <p>該当なし</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 一覧テーブル -->
+<table class="table">
+  <thead>
+    <tr>
+      <th>姫</th>
+      <th>担当ホスト</th>
+      <th>最終来店</th>
+      <th>来店回数</th>
+      <th>キープ</th>
+      <th>誕生日</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.default_host }}</td>
+      <td>{{ r.last_visit or '-' }}</td>
+      <td>{{ r.visit_count }}</td>
+      <td>{{ r.keep or '-' }}</td>
+      <td>{{ r.birthday or '-' }}</td>
+      <td><a class="btn" href="{{ url_for('admin.store_customer_detail', cid=r.id) }}">詳細</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

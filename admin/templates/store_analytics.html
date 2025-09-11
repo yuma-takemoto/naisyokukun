@@ -2,37 +2,129 @@
 {% block store_content %}
 <h2>データ解析</h2>
 
+<style>
+  .toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:12px}
+  .toolbar .group{display:flex;flex-direction:column;gap:4px}
+  .grid2{display:grid;grid-template-columns:1fr;gap:16px}
+  @media (min-width: 900px){ .grid2{grid-template-columns:2fr 1fr} }
+  .table{width:100%;border-collapse:collapse}
+  .table th,.table td{border-bottom:1px solid #eee;padding:8px;text-align:left}
+  .muted{color:#666;font-size:12px}
+</style>
+
+<div class="toolbar">
+  <div class="group">
+    <label>開始日</label>
+    <!-- 初期値はJSで設定する -->
+    <input type="date" id="from">
+  </div>
+  <div class="group">
+    <label>終了日</label>
+    <!-- 初期値はJSで設定する -->
+    <input type="date" id="to">
+  </div>
+  <div class="group">
+    <label>粒度</label>
+    <select id="group">
+      <option value="daily">日別</option>
+      <option value="host">ホスト別</option>
+      <option value="liquor">酒類別</option>
+    </select>
+  </div>
+  <div class="group">
+    <button class="btn" id="reload">更新</button>
+  </div>
+  <div class="group" style="margin-left:auto">
+    <span class="muted">※ グラフの値は売上合計（円）</span>
+  </div>
+</div>
+
+<div class="grid2">
+  <div>
+    <canvas id="chart" height="220"></canvas>
+  </div>
+  <div>
+    <table class="table" id="tbl">
+      <thead><tr><th>項目</th><th>合計</th><th>件数</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<h3 style="margin-top:24px;">領収書履歴</h3>
 <table class="table">
   <thead>
-    <tr>
-      <th>日付</th>
-      <th>席</th>
-      <th>ホスト</th>
-      <th>姫</th>
-      <th>合計(¥)</th>
-      <th>歩合計(¥)</th>
-    </tr>
+    <tr><th>日付</th><th>席</th><th>担当</th><th>合計</th><th>請求書</th></tr>
   </thead>
   <tbody>
-    {# 新しいものを上にしたい場合は |reverse で反転 #}
-    {% for s in sales|reverse %}
+    {% for s in sales|sort(attribute='date', reverse=True) %}
       <tr>
-        <td>{{ s['date'] }}</td>
-        <td>{{ s['seat_label'] }}</td>
-        <td>{{ host_map.get(s['host_id'], '未登録') }}</td>
-        <td>{{ s.get('guest_name','') }}</td>
-        <td>¥{{ '%.0f'|format(s.get('total', 0)) }}</td>
-        <td>
-          ¥{{ '%.0f'|format(s.get('commission_total', 0)) }}
-          <a
-            class="btn"
-            style="margin-left:6px;padding:2px 8px;font-size:12px;"
-            href="{{ url_for('admin.store_invoice', sale_id=s['id']) }}"
-            target="_blank" rel="noopener"
-          >請求書</a>
-        </td>
+        <td>{{ s.date }}</td>
+        <td>{{ s.seat_label }}</td>
+        <td>{{ host_map.get(s.host_id, '-') }}</td>
+        <td>¥{{ '%.0f'|format(s.total) }}</td>
+        <td><a class="btn" href="{{ url_for('admin.store_invoice', sale_id=s.id) }}" target="_blank">開く</a></td>
       </tr>
     {% endfor %}
   </tbody>
 </table>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(function(){
+  const qs = sel => document.querySelector(sel);
+  const from = qs('#from'), to = qs('#to'), group = qs('#group'), btn = qs('#reload');
+
+  // === ここで初期日付（今月1日〜今日）をセット ===
+  function fmt(d){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+  (function initDates(){
+    const today = new Date();
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    if(!from.value) from.value = fmt(first);
+    if(!to.value)   to.value   = fmt(today);
+  })();
+
+  let chart;
+  function renderChart(labels, totals){
+    const ctx = document.getElementById('chart').getContext('2d');
+    if(chart) chart.destroy();
+    chart = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [{ label: '売上合計(円)', data: totals }] },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+  }
+  function renderTable(rows){
+    const tbody = document.querySelector('#tbl tbody');
+    tbody.innerHTML = '';
+    for(const r of rows){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.label}</td><td>¥${(r.total||0).toLocaleString()}</td><td>${r.count||0}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+  async function load(){
+    const params = new URLSearchParams({
+      from: from.value, to: to.value, group: group.value
+    });
+    const res = await fetch('{{ url_for("admin.store_analytics_data") }}?'+params.toString());
+    const data = await res.json();
+    if(res.ok && data.ok){
+      renderChart(data.labels, data.totals);
+      renderTable(data.table);
+    }else{
+      alert('集計の取得に失敗しました');
+    }
+  }
+  btn.addEventListener('click', load);
+  // 初回ロード
+  load();
+})();
+</script>
 {% endblock %}

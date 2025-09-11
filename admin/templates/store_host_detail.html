@@ -5,6 +5,10 @@
 <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
   <div class="card">
     <h3>サマリー</h3>
+    <p class="muted">
+      最終出勤: {{ host.last_clock_in or '—' }} /
+      最終退勤: {{ host.last_clock_out or '—' }}
+    </p>
     <p>今日の売上：<strong>¥{{ '%.0f'|format(total_today) }}</strong></p>
     <p>今月の売上：<strong>¥{{ '%.0f'|format(total_month) }}</strong></p>
     <p>今日の歩合：<strong>¥{{ '%.0f'|format(comm_today) }}</strong></p>

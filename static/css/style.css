@@ -104,3 +104,15 @@ h1 { margin: 8px 0 16px; }
 }
 /* 小さめボタン（任意） */
 .btn.btn-sm { padding: 2px 8px; font-size: 12px; }
+.chip {
+  display: inline-block;
+  margin-left: .5rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #eef2ff;
+  color: #334155;
+  border: 1px solid #c7d2fe;
+}
+.muted { color:#64748b; font-size: 12px; }
+.badge.on.dim{ opacity:.35; }
