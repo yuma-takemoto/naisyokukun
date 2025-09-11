@@ -14,6 +14,11 @@ def create_app(config_class=Config) -> Flask:
     @app.route("/")
     def index():
         return redirect(url_for("admin.dashboard"))
+    
+    @app.get("/healthz")
+    def healthz():
+        # 200を返せばOK。重い処理は入れない
+        return "ok", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
     return app
 
