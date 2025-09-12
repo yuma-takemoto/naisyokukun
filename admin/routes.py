@@ -852,13 +852,6 @@ def login():
         st = _load_settings()
         hpw = st.get("admin_password", "")
 
-        # デバッグログ（平文パスワードは出さない）
-        try:
-            current_app.logger.info("[LOGIN] settings.json exists=%s hash_prefix=%s len=%s",
-                                    bool(hpw), (hpw[:12] if hpw else None), (len(hpw) if hpw else 0))
-        except Exception:
-            pass
-
         ok = False
         if hpw:
             try:
@@ -876,17 +869,6 @@ def login():
             err = "パスワードが違います"
 
     return render_template("admin_login.html", error=err)
-
-@bp.route("/login_diag")
-def login_diag():
-    st = _load_settings()
-    hpw = st.get("admin_password", "")
-    return {
-        "has_admin_password": bool(hpw),
-        "hash_method": (hpw.split(":", 1)[0] if hpw else None),
-        "hash_prefix": (hpw[:16] if hpw else None),
-        "hash_len": (len(hpw) if hpw else 0),
-    }, 200
 
 @bp.route("/logout")
 def logout():
