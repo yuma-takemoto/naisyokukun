@@ -402,10 +402,6 @@ def on_text(event: MessageEvent):
     uid = getattr(event.source, "user_id", None)
 
     # --- ID ---
-    if txt_nospace in ("id", "ユーザーid", "ユーザーｉｄ", "ｉｄ"):
-        _safe_reply(event.reply_token, f"あなたのLINEユーザーID: {uid or '取得できませんでした'}")
-        return
-
     # --- ひも付け（登録 <店舗ID>-<ホストID>）---
     m = re.match(r"^(登録|link)\s+(\d+)\s*[-_－〜~:：]\s*(\d+)$", txt)
     if m and uid:
@@ -415,10 +411,37 @@ def on_text(event: MessageEvent):
         if not target:
             _safe_reply(event.reply_token, f"登録失敗：店舗ID {store_id}／ホストID {host_id} が見つかりません。")
             return
-        links = _load_links(); links[uid] = {"store_id": store_id, "host_id": host_id}
+
+        # 既存のリンクファイルを更新（従来どおり）
+        links = _load_links()
+        links[uid] = {"store_id": store_id, "host_id": host_id}
         _save_links(links)
+
+        # ★ 追加：hosts.json にも LINE ユーザーID（表示名）を反映
+        # 同じUIDが別ホストに付いていたら外す（重複回避）
+        for h in hosts:
+            try:
+                same_uid = (h.get("line_user_id") == uid)
+                same_host = (int(h.get("store_id") or 0)==store_id and int(h.get("id") or 0)==host_id)
+                if same_uid and not same_host:
+                    h["line_user_id"] = ""
+            except Exception:
+                pass
+
+        target["line_user_id"] = uid
+        # 可能ならプロフィール名も保存（権限があれば取得可）
+        if line_bot_api:
+            try:
+                prof = line_bot_api.get_profile(uid)
+                target["line_display_name"] = getattr(prof, "display_name", "") or ""
+            except Exception:
+                 pass
+
+        _save_hosts(hosts)  # ←忘れず保存！
+
         _safe_reply(event.reply_token, f"登録しました。（{store_id}-{host_id}）")
         return
+
 
     # --- 紐付けチェック ---
     link = (_load_links()).get(uid or "")

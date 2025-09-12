@@ -5,7 +5,7 @@ from functools import wraps
 from . import bp
 import os, json, csv, io, smtplib, ssl, queue
 from email.message import EmailMessage
-from datetime import datetime
+from datetime import datetime, date
 from collections import defaultdict
 import re
 import unicodedata
@@ -54,6 +54,29 @@ def store_required(f):
         g.current_store = store
         return f(*args, **kwargs)
     return wrapper
+
+def _parse_mmdd_from_birthday(b):
+    """
+    'YYYY-M-D', 'YYYY-MM-DD', 'M-D', 'MM-DD' に対応して (month, day) を返す。
+    パース不能なら None を返す。
+    """
+    if not b:
+        return None
+    s = str(b).strip().replace("/", "-").replace(".", "-")
+    parts = s.split("-")
+    try:
+        if len(parts) == 2:
+            m = int(parts[0]); d = int(parts[1])
+        elif len(parts) >= 3:
+            # 先頭は年とみなして、2番目:月, 3番目:日
+            m = int(parts[1]); d = int(parts[2])
+        else:
+            return None
+        if 1 <= m <= 12 and 1 <= d <= 31:
+            return (m, d)
+    except Exception:
+        return None
+    return None
 
 # この blueprint 配下のルートだけに CSRF を適用
 @bp.before_request
@@ -1624,6 +1647,9 @@ def store_customers():
     store = _store_context()
     customers = [c for c in load_customers() if c.get("store_id")==store["id"]]
     hosts = [h for h in load_hosts() if h.get("store_id")==store["id"]]
+
+    customers = load_customers() or []
+    customers = [c for c in customers if isinstance(c, dict)]  # ← 非dictが混じっても弾く
 
     # 設定（無ければ既定値）
     s = load_settings() or {}
