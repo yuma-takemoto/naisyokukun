@@ -118,9 +118,16 @@ function updateLiquorOptionTexts(mapById){
     hostSel.addEventListener('change', ()=> saveSeat({ host_id: parseInt(hostSel.value||0) }));
 
     // 注文追加：DOMは更新しない（SSEのorder_addedで描画）
-    card.querySelector('.add').addEventListener('click', async ()=>{
-      const liquorId = parseInt(liquorSel.value,10);
-      const qty      = Math.max(1, parseInt(qtyInput.value||1,10));
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-action="add-item"]');
+      if (!btn) return;
+
+      const seatLabel = btn.dataset.seatLabel;   // 例: "A1"
+      const liquorName = btn.dataset.itemName;   // 例: "ビール"
+
+      // ★ 確認ダイアログを追加
+      const ok = window.confirm(`席 ${seatLabel} に『${liquorName}』を追加しますか？`);
+      if (!ok) return;
 
       const res = await fetch('{{ url_for("admin.store_ops_order") }}', {
         method:'POST',

@@ -10,6 +10,7 @@ from collections import defaultdict
 import re
 import unicodedata
 from werkzeug.security import check_password_hash
+from admin.notify import send_mail
 
 # ====== パス定義 ======
 INSTANCE_DIR        = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance")
@@ -315,6 +316,33 @@ def _load_settings():
             return json.load(f)
     except Exception:
         return {}
+# 在庫更新直後（liquors を保存した後 or 保存前でもOK）
+    _maybe_notify_low_stock(store_id, liquor)
+
+# もし関数が同ファイル外にあるなら import をお忘れなく
+
+def _maybe_notify_low_stock(store_id: int, liquor: dict):
+    """在庫が下限 min_stock を下回ったら1度だけメールする（繰り返し防止フラグ付き）"""
+    try:
+        stock = int(liquor.get("stock") or 0)
+        min_stock = int(liquor.get("min_stock") or 0)  # ← 商品マスタに min_stock がある想定
+    except Exception:
+        stock = 0; min_stock = 0
+
+    # すでに通知済みならスキップ（liquor にフラグを持たせる）
+    if min_stock and stock <= min_stock and not liquor.get("low_mail_sent_at"):
+        ok = send_mail(
+            subject=f"[在庫下限] {liquor.get('name','')} 残り {stock}",
+            body=(
+                f"店舗ID: {store_id}\n"
+                f"商品: {liquor.get('name','')}\n"
+                f"現在庫: {stock}\n"
+                f"下限: {min_stock}\n"
+                f"時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            ),
+        )
+        if ok:
+            liquor["low_mail_sent_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # --- seats upsert (テンプレ互換) ---
 # --- seats upsert（単票 & バッチ両対応 / 店舗スコープ）---
