@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, make_response, abort, g, flash, Response, stream_with_context
+from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, make_response, abort, g, flash, Response, stream_with_context, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 from functools import wraps
@@ -9,6 +9,7 @@ from datetime import datetime
 from collections import defaultdict
 import re
 import unicodedata
+from werkzeug.security import check_password_hash
 
 # ====== パス定義 ======
 INSTANCE_DIR        = os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance")
@@ -278,6 +279,19 @@ def _resolve_ng_names_for_customer(c: dict, hosts: list, store_id: int):
                 pass
 
     return sorted(names)
+
+def _settings_path():
+    from pathlib import Path
+    base = Path(os.path.dirname(os.path.dirname(__file__)))  # プロジェクト直下
+    inst = base / "instance" / "settings.json"
+    return str(inst)
+
+def _load_settings():
+    try:
+        with open(_settings_path(), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 # --- seats upsert (テンプレ互換) ---
 # --- seats upsert（単票 & バッチ両対応 / 店舗スコープ）---
@@ -819,25 +833,60 @@ def settings():
 
 @bp.route("/login", methods=["GET", "POST"])
 def login():
-    msg = None
+    err = None
     if request.method == "POST":
-        user = request.form.get("user") or ""
-        password = request.form.get("password") or ""
-        s = load_settings()
+        # どんなキー名でも拾う（password / admin_password / pass / pwd）
+        data = request.get_json(silent=True) or {}
+        pwd = (
+            request.form.get("password")
+            or request.form.get("admin_password")
+            or request.form.get("pass")
+            or request.form.get("pwd")
+            or data.get("password")
+            or data.get("admin_password")
+            or data.get("pass")
+            or data.get("pwd")
+            or ""
+        ).strip()
+
+        st = _load_settings()
+        hpw = st.get("admin_password", "")
+
+        # デバッグログ（平文パスワードは出さない）
+        try:
+            current_app.logger.info("[LOGIN] settings.json exists=%s hash_prefix=%s len=%s",
+                                    bool(hpw), (hpw[:12] if hpw else None), (len(hpw) if hpw else 0))
+        except Exception:
+            pass
+
         ok = False
-        if user == s.get("admin_user"):
-            apw = s.get("admin_password") or ""
-            if _is_hashed(apw):
-                ok = check_password_hash(apw, password)
-            else:
-                ok = (password == apw)
+        if hpw:
+            try:
+                ok = check_password_hash(hpw, pwd)
+            except Exception as e:
+                current_app.logger.exception("[LOGIN] check_password_hash failed: %s", e)
+                err = "内部エラー"
+        else:
+            err = "管理パスワードが未設定です（settings.json）"
+
         if ok:
             session["admin_logged_in"] = True
-            next_url = request.args.get("next") or url_for("admin.dashboard")
-            return redirect(next_url)
-        else:
-            msg = "ユーザー名またはパスワードが違います。"
-    return render_template("admin_login.html", message=msg)
+            return redirect(url_for("admin.dashboard"))
+        if not err:
+            err = "パスワードが違います"
+
+    return render_template("admin_login.html", error=err)
+
+@bp.route("/login_diag")
+def login_diag():
+    st = _load_settings()
+    hpw = st.get("admin_password", "")
+    return {
+        "has_admin_password": bool(hpw),
+        "hash_method": (hpw.split(":", 1)[0] if hpw else None),
+        "hash_prefix": (hpw[:16] if hpw else None),
+        "hash_len": (len(hpw) if hpw else 0),
+    }, 200
 
 @bp.route("/logout")
 def logout():
