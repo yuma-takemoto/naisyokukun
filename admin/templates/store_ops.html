@@ -38,27 +38,32 @@
     <hr>
 
     <div>
-  <label>注文追加
-    <select class="liquor">
-      {% for l in liquors %}
-        <option value="{{ l.id }}" data-price="{{ l.sale_price|int }}" data-stock="{{ l.stock|int }}">
-          {{ l.name }}（¥{{ '%.0f'|format(l.sale_price) }} / 在庫{{ l.stock }}）
-        </option>
-      {% endfor %}
-    </select>
-    <input class="qty" type="number" value="1" min="1" style="width:64px;">
-    <!-- ★ 変更点：type="button" と onclick を追加。席ラベルは確認メッセージ用に付与（任意） -->
-    <button type="button"
-            class="btn add"
-            data-seat-label="{{ s.label }}"
-            onclick="return confirmAdd(event, this)">追加</button>
-  </label>
+      <label>注文追加
+        <select class="liquor">
+          {% for l in liquors %}
+            <option value="{{ l.id }}" data-price="{{ l.sale_price|int }}" data-stock="{{ l.stock|int }}">
+              {{ l.name }}（¥{{ '%.0f'|format(l.sale_price) }} / 在庫{{ l.stock }}）
+            </option>
+          {% endfor %}
+        </select>
+        <input class="qty" type="number" value="1" min="1" style="width:64px;">
+        <!-- 追加確認のためのボタン -->
+        <button type="button"
+                class="btn add"
+                data-seat-label="{{ s.label }}"
+                onclick="return confirmAdd(event, this)">
+          追加
+        </button>
+      </label>
 
-  <ul class="items">
-    {% for it in s.get('items', []) %}
-      <li>{{ it.name }} x {{ it.qty }} = ¥{{ '%.0f'|format(it.qty*it.unit_price) }}</li>
-    {% endfor %}
-  </ul>
+      <ul class="items">
+        {% for it in s.get('items', []) %}
+          <li>{{ it.name }} x {{ it.qty }} = ¥{{ '%.0f'|format(it.qty*it.unit_price) }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endfor %}
 </div>
 
 
