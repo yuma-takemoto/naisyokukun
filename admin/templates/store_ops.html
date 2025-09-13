@@ -38,27 +38,29 @@
     <hr>
 
     <div>
-      <label>注文追加
-        <select class="liquor">
-          {% for l in liquors %}
-            <option value="{{ l.id }}" data-price="{{ l.sale_price|int }}" data-stock="{{ l.stock|int }}">
-              {{ l.name }}（¥{{ '%.0f'|format(l.sale_price) }} / 在庫{{ l.stock }}）
-            </option>
-          {% endfor %}
-        </select>
-        <input class="qty" type="number" value="1" min="1" style="width:64px;">
-        <button class="btn add">追加</button>
-      </label>
+  <label>注文追加
+    <select class="liquor">
+      {% for l in liquors %}
+        <option value="{{ l.id }}" data-price="{{ l.sale_price|int }}" data-stock="{{ l.stock|int }}">
+          {{ l.name }}（¥{{ '%.0f'|format(l.sale_price) }} / 在庫{{ l.stock }}）
+        </option>
+      {% endfor %}
+    </select>
+    <input class="qty" type="number" value="1" min="1" style="width:64px;">
+    <!-- ★ 変更点：type="button" と onclick を追加。席ラベルは確認メッセージ用に付与（任意） -->
+    <button type="button"
+            class="btn add"
+            data-seat-label="{{ s.label }}"
+            onclick="return confirmAdd(event, this)">追加</button>
+  </label>
 
-      <ul class="items">
-        {% for it in s.get('items', []) %}
-          <li>{{ it.name }} x {{ it.qty }} = ¥{{ '%.0f'|format(it.qty*it.unit_price) }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-  </div>
-  {% endfor %}
+  <ul class="items">
+    {% for it in s.get('items', []) %}
+      <li>{{ it.name }} x {{ it.qty }} = ¥{{ '%.0f'|format(it.qty*it.unit_price) }}</li>
+    {% endfor %}
+  </ul>
 </div>
+
 
 <script>
 function updateLiquorOptionTexts(mapById){
@@ -297,4 +299,39 @@ function updateLiquorOptionTexts(mapById){
   }
 })();
 </script>
+
+<script>
+  // 既存のクリックハンドラや fetch はそのまま使いたいので、
+  // ここでは「OK なら true、キャンセルなら false（＋イベント停止）」だけを行う。
+  function confirmAdd(ev, btn) {
+    try {
+      const root = btn.closest('label') || btn.parentElement;
+      const sel  = root.querySelector('select.liquor');
+      const qtyI = root.querySelector('input.qty');
+
+      const opt  = sel && sel.options[sel.selectedIndex];
+      const full = (opt && (opt.textContent || opt.innerText) || '商品').trim();
+      // 表示用テキストから末尾の（¥価格 / 在庫N）をざっくり除去
+      const name = full.replace(/（.*?）$/, '').trim();
+
+      const qty  = Math.max(1, parseInt(qtyI && qtyI.value || '1', 10));
+      const seat = btn.dataset.seatLabel ? `席 ${btn.dataset.seatLabel} ` : '';
+
+      const ok = window.confirm(`${seat}で『${name}』を ${qty} 追加しますか？`);
+      if (!ok) {
+        if (ev) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation(); // 他の click リスナにも届かないように
+          ev.stopPropagation();
+        }
+        return false;
+      }
+      return true; // 既存の click ハンドラ（fetch 等）に処理を渡す
+    } catch (e) {
+      // 万一ここで失敗しても操作を止めない（既存のハンドラで処理させる）
+      return true;
+    }
+  }
+</script>
+
 {% endblock %}
