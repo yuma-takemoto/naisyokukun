@@ -47,7 +47,7 @@
           {% endfor %}
         </select>
         <input class="qty" type="number" value="1" min="1" style="width:64px;">
-        <!-- 追加確認は confirmAdd で。OK時のみ click ハンドラが走る -->
+        <!-- 追加は confirmAdd で確認だけ。処理は JS 側の click ハンドラで1回だけ実行 -->
         <button type="button"
                 class="btn add"
                 data-seat-label="{{ s.label }}"
@@ -134,27 +134,20 @@ async function postJSON(url, payload){
     guest.addEventListener('change', ()=> saveSeat({ guest_name: guest.value }));
     hostSel.addEventListener('change', ()=> saveSeat({ host_id: parseInt(hostSel.value||0,10) }));
 
-    // ★ 注文追加（ここが主因の修正。ボタンに直接バインドし、liquorId/qty をここで確定）
+    // ★ 注文追加：API呼び出しのみ。DOM は SSE の seat_update に任せる（重複防止）
     btnAdd.addEventListener('click', async ()=>{
       const liquorId = parseInt(liquorSel.value, 10);
       const qty = Math.max(1, parseInt(qtyInput.value||'1', 10));
       if(!liquorId){ alert('商品を選択してください'); return; }
       try{
         const d = await postJSON(URL_ORDER_ADD, { seat_id: id, liquor_id: liquorId, qty });
-        // 在庫表示を即時更新
+        // 在庫表示だけ即時更新
         if(typeof d.stock !== 'undefined'){
           const map={}; map[d.liquor_id]={ name:d.name, sale_price:d.unit_price, stock:d.stock };
           updateLiquorOptionTexts(map);
-        } else {
-          // 互換: 在庫を取り直し
-          try{ await refreshLiquorsOnce(); }catch(_){}
         }
-        // SSEが来ない環境でも見えるようにフォールバックで明細1行追加
-        const name = (liquorSel.options[liquorSel.selectedIndex].text || '').replace(/（.*?）$/, '').trim();
-        const price = parseInt(liquorSel.options[liquorSel.selectedIndex].dataset.price||'0',10);
-        const li = document.createElement('li');
-        li.textContent = `${name} x ${qty} = ¥${qty*price}`;
-        itemsUL.appendChild(li);
+        qtyInput.value = 1;
+        // 明細 li はここでは追加しない（SSE seat_update で再描画）
       }catch(e){
         if(String(e.message).includes('no_stock')) alert('在庫が足りません');
         else alert('追加に失敗しました: ' + e.message);
@@ -197,7 +190,7 @@ async function postJSON(url, payload){
     setTimeout(pollLiquors, 8000);
   })();
 
-  // SSE（任意）
+  // ===== SSE =====
   if (!window.__OPS_SSE_INITIALIZED__) {
     window.__OPS_SSE_INITIALIZED__ = true;
     const es = new EventSource(URL_SSE);
@@ -212,22 +205,20 @@ async function postJSON(url, payload){
         map[parseInt(data.id,10)] = { name:data.name, sale_price:parseInt(data.sale_price||0,10), stock:parseInt(data.stock||0,10) };
         updateLiquorOptionTexts(map);
       }
+
       if(type === 'liquor_deleted'){
         const id = String(data.id);
         document.querySelectorAll('select.liquor').forEach(sel=>{
           Array.from(sel.options).forEach(opt=>{ if(opt.value === id) opt.remove(); });
         });
       }
+
+      // ❌ 二重表示防止：order_added では UI を更新しない（サーバは seat_update も送ってくる）
       if(type === 'order_added'){
-        const card = document.querySelector(`.card[data-id="${data.seat_id}"]`);
-        if(!card) return;
-        const ul = card.querySelector('.items');
-        const it = data.item || {};
-        const q = parseInt(it.qty||0,10), up = parseInt(it.unit_price||0,10);
-        const li = document.createElement('li');
-        li.textContent = `${it.name||''} x ${q} = ¥${q*up}`;
-        ul.appendChild(li);
+        return;
       }
+
+      // ✅ items の描画は seat_update に一本化
       if(type === 'seat_update'){
         const card = document.querySelector(`.card[data-id="${data.id}"]`);
         if(!card) return;
@@ -259,6 +250,7 @@ async function postJSON(url, payload){
           }
         }
       }
+
       if(type === 'checkout_done'){
         const card = document.querySelector(`.card[data-id="${data.seat_id}"]`);
         if(card){
