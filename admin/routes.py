@@ -1164,6 +1164,100 @@ def _maybe_notify_low_stock(store, liquor, liquors_all):
         return ok
     return False
 
+@bp.route("/store/orders/add", methods=["POST"])
+@store_required
+def store_orders_add():
+    """席に商品を追加し、在庫を減らす。フロントの非同期追加用。"""
+    store = _store_context()
+    data = request.get_json(silent=True) or {}
+    try:
+        seat_id   = int(data.get("seat_id") or 0)
+        liquor_id = int(data.get("liquor_id") or 0)
+        qty       = max(1, int(data.get("qty") or 1))
+    except Exception:
+        return jsonify({"ok": False, "error": "bad_request"}), 400
+
+    if not (seat_id and liquor_id and qty):
+        return jsonify({"ok": False, "error": "invalid_params"}), 400
+
+    # 対象商品
+    liquors = load_liquors() or []
+    liq = next((l for l in liquors
+                if int(l.get("store_id") or 0)==int(store["id"]) and int(l.get("id") or 0)==liquor_id), None)
+    if not liq:
+        return jsonify({"ok": False, "error": "liquor_not_found"}), 404
+
+    cur_stock = int(liq.get("stock") or 0)
+    if cur_stock < qty:
+        return jsonify({"ok": False, "error": "no_stock", "stock": cur_stock}), 400
+
+    # 在庫を減算
+    liq["stock"] = cur_stock - qty
+    save_liquors(liquors)
+
+    # 席に明細を追加（同一商品は集約）
+    seats = load_seats() or []
+    seat = next((s for s in seats
+                 if int(s.get("store_id") or 0)==int(store["id"]) and int(s.get("id") or 0)==seat_id), None)
+    if not seat:
+        return jsonify({"ok": False, "error": "seat_not_found"}), 404
+
+    seat.setdefault("items", [])
+    unit_price = int(liq.get("sale_price") or 0)
+
+    merged = False
+    for it in seat["items"]:
+        if int(it.get("liquor_id") or 0)==liquor_id and int(it.get("unit_price") or 0)==unit_price:
+            it["qty"] = int(it.get("qty") or 0) + qty
+            merged = True
+            break
+    if not merged:
+        seat["items"].append({
+            "liquor_id": liquor_id,
+            "name": liq.get("name"),
+            "qty": qty,
+            "unit_price": unit_price
+        })
+
+    # 席オープン/担当の保全
+    seat["open"] = True
+    seat.setdefault("host_id", seat.get("host_id") or 0)
+
+    save_seats(seats)
+
+    # SSE 通知（在庫＆席）
+    try:
+        _sse_broadcast(store["id"], "inventory_update", {
+            "id": int(liq["id"]),
+            "name": liq.get("name"),
+            "sale_price": int(liq.get("sale_price") or 0),
+            "stock": int(liq.get("stock") or 0),
+        })
+        _sse_broadcast(store["id"], "seat_update", {
+            "id": int(seat["id"]),
+            "open": seat.get("open", True),
+            "guest_name": seat.get("guest_name") or "",
+            "host_id": int(seat.get("host_id") or 0),
+            "customer_id": int(seat.get("customer_id") or 0),
+            "items": [{"name": it.get("name"), "qty": int(it.get("qty") or 0), "unit_price": int(it.get("unit_price") or 0)}
+                      for it in (seat.get("items") or [])]
+        })
+        # 互換イベント（フロント未使用でも害なし）
+        _sse_broadcast(store["id"], "order_added", {
+            "seat_id": int(seat["id"]),
+            "item": {"name": liq.get("name"), "qty": qty, "unit_price": unit_price}
+        })
+    except Exception as e:
+        print("[orders_add] sse warn:", e)
+
+    # 低在庫アラート（必要に応じて）
+    # min_stock = int(liq.get("min_stock") or 0)
+    # if min_stock and int(liq["stock"]) <= min_stock:
+    #     try: notify_low_stock(liq)  # 既存の通知ロジックがあれば呼ぶ
+    #     except Exception as e: print("[orders_add] notify warn:", e)
+
+    return jsonify({"ok": True, "seat_id": seat_id, "liquor_id": liquor_id, "qty": qty})
+
 @bp.route("/store/ops/order", methods=["POST"])
 @store_required
 def store_ops_order():
