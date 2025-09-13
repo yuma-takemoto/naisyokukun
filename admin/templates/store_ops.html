@@ -47,7 +47,7 @@
           {% endfor %}
         </select>
         <input class="qty" type="number" value="1" min="1" style="width:64px;">
-        <!-- 確認は inline の onclick で表示。キャンセル時は伝播停止 -->
+        <!-- 追加確認は confirmAdd で。OK時のみ click ハンドラが走る -->
         <button type="button"
                 class="btn add"
                 data-seat-label="{{ s.label }}"
@@ -67,15 +67,15 @@
 </div>
 
 <script>
-// ===== サーバが埋め込むURL/トークン =====
-const ORDERS_ADD_URL = "{{ url_for('admin.store_orders_add') }}";      // 商品追加（在庫減算+SSE）
-const SEATS_UPSERT_URL = "{{ url_for('admin.store_seats_upsert') }}";  // 席保存
-const CHECKOUT_URL = "{{ url_for('admin.store_ops_checkout') }}";      // 会計
-const LIQUOR_STATUS_URL = "{{ url_for('admin.store_liquors_status') }}"; // 在庫ポーリング
-const EVENTS_URL = "{{ url_for('admin.store_events') }}";              // SSE
-const CSRF_TOKEN = "{{ csrf_token() }}";
+// ---- URL / CSRF ----
+const CSRF = "{{ csrf_token() }}";
+const URL_ORDER_ADD   = "{{ url_for('admin.store_ops_order') }}";
+const URL_SEAT_SAVE   = "{{ url_for('admin.store_seats_upsert') }}";
+const URL_CHECKOUT    = "{{ url_for('admin.store_ops_checkout') }}";
+const URL_LIQUOR_POL  = "{{ url_for('admin.store_liquors_status') }}";
+const URL_SSE         = "{{ url_for('admin.store_events') }}";
 
-// 在庫セレクトの表示文字を更新
+// 在庫セレクトの表示更新
 function updateLiquorOptionTexts(mapById){
   document.querySelectorAll('select.liquor').forEach(sel=>{
     Array.from(sel.options).forEach(opt=>{
@@ -92,25 +92,23 @@ function updateLiquorOptionTexts(mapById){
   });
 }
 
-// 共通POST(JSON)
 async function postJSON(url, payload){
   const res = await fetch(url, {
     method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token': CSRF_TOKEN},
+    headers:{'Content-Type':'application/json','X-CSRF-Token': CSRF},
     body: JSON.stringify(payload||{})
   });
   let j={}; try{ j=await res.json(); }catch(_){}
   if(!res.ok || j.ok===false){
-    const msg = (j && (j.error||j.message)) || `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new Error((j && (j.error||j.message)) || `HTTP ${res.status}`);
   }
   return j;
 }
 
 (function(){
-  // 各カードごとにリスナ設定
+  // 各カードごとに配線
   document.querySelectorAll('.card').forEach(card=>{
-    const seatId    = parseInt(card.dataset.id,10);
+    const id        = parseInt(card.dataset.id,10);
     const guest     = card.querySelector('.guest');
     const hostSel   = card.querySelector('.host');
     const stateText = card.querySelector('.state-text');
@@ -121,44 +119,42 @@ async function postJSON(url, payload){
     const qtyInput  = card.querySelector('.qty');
     const btnAdd    = card.querySelector('.add');
 
-    async function saveSeat(payload){
-      payload.id = seatId;
-      await postJSON(SEATS_UPSERT_URL, payload);
-      return true;
-    }
+    const saveSeat = (payload)=> postJSON(URL_SEAT_SAVE, Object.assign({id}, payload)).then(()=>true);
 
     // 空席⇄接客中
     btnOpen.addEventListener('click', async ()=>{
-      const willOpen = (stateText.textContent.trim() === '空席'); // 空席→接客中
-      const ok = await saveSeat({
-        open: willOpen,
-        guest_name: guest.value,
-        host_id: parseInt(hostSel.value||0,10)
-      });
-      if(ok){
+      const willOpen = (stateText.textContent.trim() === '空席');
+      if(await saveSeat({ open: willOpen, guest_name: guest.value, host_id: parseInt(hostSel.value||0,10) })){
         stateText.textContent = willOpen ? '接客中' : '空席';
         stateChip.classList.toggle('is-open',  willOpen);
         stateChip.classList.toggle('is-empty', !willOpen);
         btnOpen.textContent  = willOpen ? '空席にする' : '接客中にする';
       }
     });
-
-    // 担当/姫名変更
     guest.addEventListener('change', ()=> saveSeat({ guest_name: guest.value }));
     hostSel.addEventListener('change', ()=> saveSeat({ host_id: parseInt(hostSel.value||0,10) }));
 
-    // 注文追加（確認は onclick=confirmAdd で済ませ、OK時のみこのハンドラが実行される）
+    // ★ 注文追加（ここが主因の修正。ボタンに直接バインドし、liquorId/qty をここで確定）
     btnAdd.addEventListener('click', async ()=>{
       const liquorId = parseInt(liquorSel.value, 10);
-      const qty = Math.max(1, parseInt(qtyInput.value || '1', 10));
+      const qty = Math.max(1, parseInt(qtyInput.value||'1', 10));
       if(!liquorId){ alert('商品を選択してください'); return; }
       try{
-        // 在庫減算＆明細追加（サーバ側がSSEで inventory_update / seat_update / order_added を配信）
-        await postJSON(ORDERS_ADD_URL, { seat_id: seatId, liquor_id: liquorId, qty });
-
-        // すぐに在庫表示を整えたい場合は、1回だけポーリングを即時実行
-        try{ await refreshLiquorsOnce(); }catch(_){}
-        // 明細表示はSSEの seat_update/order_added で反映されるので、ここでは触らない
+        const d = await postJSON(URL_ORDER_ADD, { seat_id: id, liquor_id: liquorId, qty });
+        // 在庫表示を即時更新
+        if(typeof d.stock !== 'undefined'){
+          const map={}; map[d.liquor_id]={ name:d.name, sale_price:d.unit_price, stock:d.stock };
+          updateLiquorOptionTexts(map);
+        } else {
+          // 互換: 在庫を取り直し
+          try{ await refreshLiquorsOnce(); }catch(_){}
+        }
+        // SSEが来ない環境でも見えるようにフォールバックで明細1行追加
+        const name = (liquorSel.options[liquorSel.selectedIndex].text || '').replace(/（.*?）$/, '').trim();
+        const price = parseInt(liquorSel.options[liquorSel.selectedIndex].dataset.price||'0',10);
+        const li = document.createElement('li');
+        li.textContent = `${name} x ${qty} = ¥${qty*price}`;
+        itemsUL.appendChild(li);
       }catch(e){
         if(String(e.message).includes('no_stock')) alert('在庫が足りません');
         else alert('追加に失敗しました: ' + e.message);
@@ -169,34 +165,29 @@ async function postJSON(url, payload){
     card.querySelector('.checkout').addEventListener('click', async ()=>{
       if(!confirm('会計を確定します。よろしいですか？')) return;
       try{
-        const d = await postJSON(CHECKOUT_URL, { seat_id: seatId });
+        const d = await postJSON(URL_CHECKOUT, { seat_id: id });
         if (d.invoice_url) window.open(d.invoice_url, '_blank');
-        // ローカルも空席状態に
         itemsUL.innerHTML = '';
         stateText.textContent = '空席';
         stateChip.classList.remove('is-open');
         stateChip.classList.add('is-empty');
         btnOpen.textContent = '接客中にする';
-        (card.querySelector('.guest')||{}).value = '';
-        (card.querySelector('.host')||{}).value = '0';
+        guest.value = '';
+        hostSel.value = '0';
       }catch(e){
         alert('会計に失敗しました: ' + e.message);
       }
     });
   });
 
-  // ===== 在庫ポーリング（SSEの保険）=====
+  // 在庫ポーリング（SSEが落ちた時の保険）
   async function refreshLiquorsOnce(){
-    const r = await fetch(LIQUOR_STATUS_URL, { method:'GET' });
+    const r = await fetch(URL_LIQUOR_POL, { method:'GET' });
     const d = await r.json();
     if(d && d.ok){
       const map = {};
       for(const it of (d.items||[])){
-        map[parseInt(it.id,10)] = {
-          name: it.name,
-          sale_price: parseInt(it.sale_price||0,10),
-          stock: parseInt(it.stock||0,10)
-        };
+        map[parseInt(it.id,10)] = { name: it.name, sale_price: parseInt(it.sale_price||0,10), stock: parseInt(it.stock||0,10) };
       }
       updateLiquorOptionTexts(map);
     }
@@ -206,48 +197,37 @@ async function postJSON(url, payload){
     setTimeout(pollLiquors, 8000);
   })();
 
-  // ===== SSE =====
+  // SSE（任意）
   if (!window.__OPS_SSE_INITIALIZED__) {
     window.__OPS_SSE_INITIALIZED__ = true;
-    const es = new EventSource(EVENTS_URL);
-    es.addEventListener('ping', ()=>{});
-
+    const es = new EventSource(URL_SSE);
+    es.addEventListener('ping', () => {});
     es.onmessage = (e)=>{
       if(!e.data) return;
       let msg={}; try{ msg = JSON.parse(e.data); }catch(_){ return; }
       const type = msg.type, data = msg.data || {};
 
       if(type === 'inventory_update'){
-        const map = {};
-        map[parseInt(data.id,10)] = {
-          name: data.name,
-          sale_price: parseInt(data.sale_price||0,10),
-          stock: parseInt(data.stock||0,10)
-        };
+        const map={};
+        map[parseInt(data.id,10)] = { name:data.name, sale_price:parseInt(data.sale_price||0,10), stock:parseInt(data.stock||0,10) };
         updateLiquorOptionTexts(map);
       }
-
       if(type === 'liquor_deleted'){
         const id = String(data.id);
         document.querySelectorAll('select.liquor').forEach(sel=>{
-          Array.from(sel.options).forEach(opt=>{
-            if(opt.value === id) opt.remove();
-          });
+          Array.from(sel.options).forEach(opt=>{ if(opt.value === id) opt.remove(); });
         });
       }
-
       if(type === 'order_added'){
         const card = document.querySelector(`.card[data-id="${data.seat_id}"]`);
         if(!card) return;
         const ul = card.querySelector('.items');
         const it = data.item || {};
-        const qty = parseInt(it.qty||0,10);
-        const up  = parseInt(it.unit_price||0,10);
+        const q = parseInt(it.qty||0,10), up = parseInt(it.unit_price||0,10);
         const li = document.createElement('li');
-        li.textContent = `${it.name||''} x ${qty} = ¥${qty*up}`;
+        li.textContent = `${it.name||''} x ${q} = ¥${q*up}`;
         ul.appendChild(li);
       }
-
       if(type === 'seat_update'){
         const card = document.querySelector(`.card[data-id="${data.id}"]`);
         if(!card) return;
@@ -264,12 +244,8 @@ async function postJSON(url, payload){
           stateChip.classList.toggle('is-empty', !isOpen);
           if(btnOpen) btnOpen.textContent = isOpen ? '空席にする' : '接客中にする';
         }
-        if(typeof data.guest_name !== 'undefined' && guestInp){
-          guestInp.value = data.guest_name || '';
-        }
-        if(typeof data.host_id !== 'undefined' && hostSel){
-          hostSel.value = String(data.host_id || 0);
-        }
+        if(typeof data.guest_name !== 'undefined' && guestInp){ guestInp.value = data.guest_name || ''; }
+        if(typeof data.host_id !== 'undefined' && hostSel){ hostSel.value = String(data.host_id || 0); }
         if(Array.isArray(data.items)){
           const ul = card.querySelector('.items');
           if(ul){
@@ -283,7 +259,6 @@ async function postJSON(url, payload){
           }
         }
       }
-
       if(type === 'checkout_done'){
         const card = document.querySelector(`.card[data-id="${data.seat_id}"]`);
         if(card){
@@ -294,10 +269,7 @@ async function postJSON(url, payload){
           const guest     = card.querySelector('.guest');
           const hostSel   = card.querySelector('.host');
           if(stateText) stateText.textContent = '空席';
-          if(stateChip){
-            stateChip.classList.remove('is-open');
-            stateChip.classList.add('is-empty');
-          }
+          if(stateChip){ stateChip.classList.remove('is-open'); stateChip.classList.add('is-empty'); }
           if(btnOpen) btnOpen.textContent = '接客中にする';
           if(guest) guest.value = '';
           if(hostSel) hostSel.value = '0';
@@ -311,7 +283,7 @@ async function postJSON(url, payload){
 </script>
 
 <script>
-// クリック前の確認だけ担当。キャンセル時はイベント伝播を止めて .add の処理を走らせない
+// クリック前の確認だけ担当。キャンセル時はイベント停止
 function confirmAdd(ev, btn) {
   try {
     const root = btn.closest('label') || btn.parentElement;
@@ -324,15 +296,11 @@ function confirmAdd(ev, btn) {
     const seat = btn.dataset.seatLabel ? `席 ${btn.dataset.seatLabel} ` : '';
     const ok = window.confirm(`${seat}で『${name}』を ${qty} 追加しますか？`);
     if (!ok) {
-      ev && ev.preventDefault();
-      ev && ev.stopImmediatePropagation();
-      ev && ev.stopPropagation();
+      ev && ev.preventDefault(); ev && ev.stopImmediatePropagation(); ev && ev.stopPropagation();
       return false;
     }
     return true;
-  } catch (e) {
-    return true;
-  }
+  } catch (e) { return true; }
 }
 </script>
 

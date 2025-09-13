@@ -316,8 +316,6 @@ def _load_settings():
             return json.load(f)
     except Exception:
         return {}
-# 在庫更新直後（liquors を保存した後 or 保存前でもOK）
-    _maybe_notify_low_stock(store_id, liquor)
 
 # もし関数が同ファイル外にあるなら import をお忘れなく
 
