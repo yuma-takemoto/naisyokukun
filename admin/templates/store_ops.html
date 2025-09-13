@@ -47,7 +47,7 @@
           {% endfor %}
         </select>
         <input class="qty" type="number" value="1" min="1" style="width:64px;">
-        <!-- 追加確認のためのボタン -->
+        <!-- 確認は inline の onclick で表示。キャンセル時は伝播停止 -->
         <button type="button"
                 class="btn add"
                 data-seat-label="{{ s.label }}"
@@ -66,8 +66,16 @@
   {% endfor %}
 </div>
 
-
 <script>
+// ===== サーバが埋め込むURL/トークン =====
+const ORDERS_ADD_URL = "{{ url_for('admin.store_orders_add') }}";      // 商品追加（在庫減算+SSE）
+const SEATS_UPSERT_URL = "{{ url_for('admin.store_seats_upsert') }}";  // 席保存
+const CHECKOUT_URL = "{{ url_for('admin.store_ops_checkout') }}";      // 会計
+const LIQUOR_STATUS_URL = "{{ url_for('admin.store_liquors_status') }}"; // 在庫ポーリング
+const EVENTS_URL = "{{ url_for('admin.store_events') }}";              // SSE
+const CSRF_TOKEN = "{{ csrf_token() }}";
+
+// 在庫セレクトの表示文字を更新
 function updateLiquorOptionTexts(mapById){
   document.querySelectorAll('select.liquor').forEach(sel=>{
     Array.from(sel.options).forEach(opt=>{
@@ -84,11 +92,25 @@ function updateLiquorOptionTexts(mapById){
   });
 }
 
-(function(){
-  const csrf='{{ csrf_token() }}';
+// 共通POST(JSON)
+async function postJSON(url, payload){
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRF-Token': CSRF_TOKEN},
+    body: JSON.stringify(payload||{})
+  });
+  let j={}; try{ j=await res.json(); }catch(_){}
+  if(!res.ok || j.ok===false){
+    const msg = (j && (j.error||j.message)) || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return j;
+}
 
+(function(){
+  // 各カードごとにリスナ設定
   document.querySelectorAll('.card').forEach(card=>{
-    const id        = parseInt(card.dataset.id,10);
+    const seatId    = parseInt(card.dataset.id,10);
     const guest     = card.querySelector('.guest');
     const hostSel   = card.querySelector('.host');
     const stateText = card.querySelector('.state-text');
@@ -97,59 +119,49 @@ function updateLiquorOptionTexts(mapById){
     const itemsUL   = card.querySelector('.items');
     const liquorSel = card.querySelector('.liquor');
     const qtyInput  = card.querySelector('.qty');
+    const btnAdd    = card.querySelector('.add');
 
     async function saveSeat(payload){
-      payload.id = id;
-      const res = await fetch('{{ url_for("admin.store_seats_upsert") }}', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
-        body: JSON.stringify(payload)
-      });
-      return res.ok;
+      payload.id = seatId;
+      await postJSON(SEATS_UPSERT_URL, payload);
+      return true;
     }
 
     // 空席⇄接客中
     btnOpen.addEventListener('click', async ()=>{
-      const open = (stateText.textContent.trim() === '空席'); // 空席→接客中
-      if (await saveSeat({ open, guest_name: guest.value, host_id: parseInt(hostSel.value||0) })) {
-        const isOpen = open;
-        stateText.textContent = isOpen ? '接客中' : '空席';
-        stateChip.classList.toggle('is-open',  isOpen);
-        stateChip.classList.toggle('is-empty', !isOpen);
-        btnOpen.textContent  = isOpen ? '空席にする' : '接客中にする';
+      const willOpen = (stateText.textContent.trim() === '空席'); // 空席→接客中
+      const ok = await saveSeat({
+        open: willOpen,
+        guest_name: guest.value,
+        host_id: parseInt(hostSel.value||0,10)
+      });
+      if(ok){
+        stateText.textContent = willOpen ? '接客中' : '空席';
+        stateChip.classList.toggle('is-open',  willOpen);
+        stateChip.classList.toggle('is-empty', !willOpen);
+        btnOpen.textContent  = willOpen ? '空席にする' : '接客中にする';
       }
     });
 
     // 担当/姫名変更
     guest.addEventListener('change', ()=> saveSeat({ guest_name: guest.value }));
-    hostSel.addEventListener('change', ()=> saveSeat({ host_id: parseInt(hostSel.value||0) }));
+    hostSel.addEventListener('change', ()=> saveSeat({ host_id: parseInt(hostSel.value||0,10) }));
 
-    // 注文追加：DOMは更新しない（SSEのorder_addedで描画）
-    document.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-action="add-item"]');
-      if (!btn) return;
+    // 注文追加（確認は onclick=confirmAdd で済ませ、OK時のみこのハンドラが実行される）
+    btnAdd.addEventListener('click', async ()=>{
+      const liquorId = parseInt(liquorSel.value, 10);
+      const qty = Math.max(1, parseInt(qtyInput.value || '1', 10));
+      if(!liquorId){ alert('商品を選択してください'); return; }
+      try{
+        // 在庫減算＆明細追加（サーバ側がSSEで inventory_update / seat_update / order_added を配信）
+        await postJSON(ORDERS_ADD_URL, { seat_id: seatId, liquor_id: liquorId, qty });
 
-      const seatLabel = btn.dataset.seatLabel;   // 例: "A1"
-      const liquorName = btn.dataset.itemName;   // 例: "ビール"
-
-      // ★ 確認ダイアログを追加
-      const ok = window.confirm(`席 ${seatLabel} に『${liquorName}』を追加しますか？`);
-      if (!ok) return;
-
-      const res = await fetch('{{ url_for("admin.store_ops_order") }}', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
-        body: JSON.stringify({ seat_id: id, liquor_id: liquorId, qty })
-      });
-      const data = await res.json().catch(()=>({}));
-      if (res.ok && data.ok){
-        const map = {};
-        map[data.liquor_id] = { name: data.name, sale_price: data.unit_price, stock: data.stock };
-        updateLiquorOptionTexts(map);
-      } else if (data.error === 'no_stock') {
-        alert('在庫が足りません');
-      } else {
-        alert('追加に失敗しました');
+        // すぐに在庫表示を整えたい場合は、1回だけポーリングを即時実行
+        try{ await refreshLiquorsOnce(); }catch(_){}
+        // 明細表示はSSEの seat_update/order_added で反映されるので、ここでは触らない
+      }catch(e){
+        if(String(e.message).includes('no_stock')) alert('在庫が足りません');
+        else alert('追加に失敗しました: ' + e.message);
       }
     });
 
@@ -157,60 +169,53 @@ function updateLiquorOptionTexts(mapById){
     card.querySelector('.checkout').addEventListener('click', async ()=>{
       if(!confirm('会計を確定します。よろしいですか？')) return;
       try{
-        const res = await fetch('{{ url_for("admin.store_ops_checkout") }}', {
-          method:'POST',
-          headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
-          body: JSON.stringify({ seat_id: id })
-        });
-        const data = await res.json().catch(()=>({}));
-        if (res.ok && data.ok){
-          if (data.invoice_url) window.open(data.invoice_url, '_blank');
-          itemsUL.innerHTML = '';
-          stateText.textContent = '空席';
-          stateChip.classList.remove('is-open');
-          stateChip.classList.add('is-empty');
-          btnOpen.textContent = '接客中にする';
-          guest.value = '';
-          hostSel.value = '0';
-        } else {
-          alert('会計に失敗しました');
-        }
+        const d = await postJSON(CHECKOUT_URL, { seat_id: seatId });
+        if (d.invoice_url) window.open(d.invoice_url, '_blank');
+        // ローカルも空席状態に
+        itemsUL.innerHTML = '';
+        stateText.textContent = '空席';
+        stateChip.classList.remove('is-open');
+        stateChip.classList.add('is-empty');
+        btnOpen.textContent = '接客中にする';
+        (card.querySelector('.guest')||{}).value = '';
+        (card.querySelector('.host')||{}).value = '0';
       }catch(e){
-        alert('会計リクエスト自体に失敗しました：' + e);
+        alert('会計に失敗しました: ' + e.message);
       }
     });
   });
 
-  // 定期ポーリング（SSEが落ちた時の保険）
-  async function pollLiquors(){
-    try{
-      const r = await fetch('{{ url_for("admin.store_liquors_status") }}', { method:'GET' });
-      const d = await r.json();
-      if(d && d.ok){
-        const map = {};
-        for(const it of (d.items||[])){
-          map[parseInt(it.id,10)] = { name: it.name, sale_price: parseInt(it.sale_price||0,10), stock: parseInt(it.stock||0,10) };
-        }
-        updateLiquorOptionTexts(map);
+  // ===== 在庫ポーリング（SSEの保険）=====
+  async function refreshLiquorsOnce(){
+    const r = await fetch(LIQUOR_STATUS_URL, { method:'GET' });
+    const d = await r.json();
+    if(d && d.ok){
+      const map = {};
+      for(const it of (d.items||[])){
+        map[parseInt(it.id,10)] = {
+          name: it.name,
+          sale_price: parseInt(it.sale_price||0,10),
+          stock: parseInt(it.stock||0,10)
+        };
       }
-    }catch(e){}finally{
-      setTimeout(pollLiquors, 8000);
+      updateLiquorOptionTexts(map);
     }
   }
-  pollLiquors();
+  (async function pollLiquors(){
+    try{ await refreshLiquorsOnce(); }catch(_){}
+    setTimeout(pollLiquors, 8000);
+  })();
 
-  // ===== SSE（単一）=====
+  // ===== SSE =====
   if (!window.__OPS_SSE_INITIALIZED__) {
     window.__OPS_SSE_INITIALIZED__ = true;
-    const es = new EventSource('{{ url_for("admin.store_events") }}');
-    es.addEventListener('ping', () => {});
+    const es = new EventSource(EVENTS_URL);
+    es.addEventListener('ping', ()=>{});
 
     es.onmessage = (e)=>{
       if(!e.data) return;
-      let msg = {};
-      try { msg = JSON.parse(e.data); } catch(_){ return; }
-      const type = msg.type;
-      const data = msg.data || {};
+      let msg={}; try{ msg = JSON.parse(e.data); }catch(_){ return; }
+      const type = msg.type, data = msg.data || {};
 
       if(type === 'inventory_update'){
         const map = {};
@@ -306,37 +311,29 @@ function updateLiquorOptionTexts(mapById){
 </script>
 
 <script>
-  // 既存のクリックハンドラや fetch はそのまま使いたいので、
-  // ここでは「OK なら true、キャンセルなら false（＋イベント停止）」だけを行う。
-  function confirmAdd(ev, btn) {
-    try {
-      const root = btn.closest('label') || btn.parentElement;
-      const sel  = root.querySelector('select.liquor');
-      const qtyI = root.querySelector('input.qty');
-
-      const opt  = sel && sel.options[sel.selectedIndex];
-      const full = (opt && (opt.textContent || opt.innerText) || '商品').trim();
-      // 表示用テキストから末尾の（¥価格 / 在庫N）をざっくり除去
-      const name = full.replace(/（.*?）$/, '').trim();
-
-      const qty  = Math.max(1, parseInt(qtyI && qtyI.value || '1', 10));
-      const seat = btn.dataset.seatLabel ? `席 ${btn.dataset.seatLabel} ` : '';
-
-      const ok = window.confirm(`${seat}で『${name}』を ${qty} 追加しますか？`);
-      if (!ok) {
-        if (ev) {
-          ev.preventDefault();
-          ev.stopImmediatePropagation(); // 他の click リスナにも届かないように
-          ev.stopPropagation();
-        }
-        return false;
-      }
-      return true; // 既存の click ハンドラ（fetch 等）に処理を渡す
-    } catch (e) {
-      // 万一ここで失敗しても操作を止めない（既存のハンドラで処理させる）
-      return true;
+// クリック前の確認だけ担当。キャンセル時はイベント伝播を止めて .add の処理を走らせない
+function confirmAdd(ev, btn) {
+  try {
+    const root = btn.closest('label') || btn.parentElement;
+    const sel  = root.querySelector('select.liquor');
+    const qtyI = root.querySelector('input.qty');
+    const opt  = sel && sel.options[sel.selectedIndex];
+    const full = (opt && (opt.textContent || opt.innerText) || '商品').trim();
+    const name = full.replace(/（.*?）$/, '').trim();
+    const qty  = Math.max(1, parseInt(qtyI && qtyI.value || '1', 10));
+    const seat = btn.dataset.seatLabel ? `席 ${btn.dataset.seatLabel} ` : '';
+    const ok = window.confirm(`${seat}で『${name}』を ${qty} 追加しますか？`);
+    if (!ok) {
+      ev && ev.preventDefault();
+      ev && ev.stopImmediatePropagation();
+      ev && ev.stopPropagation();
+      return false;
     }
+    return true;
+  } catch (e) {
+    return true;
   }
+}
 </script>
 
 {% endblock %}
